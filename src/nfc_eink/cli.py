@@ -38,8 +38,11 @@ def _build_cli(click: object) -> object:
 
         _click.echo("Waiting for NFC card...")
         with EInkCard() as card:
-            _click.echo("Card detected. Authenticating...")
-            card.authenticate()
+            di = card.device_info
+            _click.echo(
+                f"Card: {card.serial_number} "
+                f"({di.width}x{di.height}, {di.num_colors} colors)"
+            )
 
             _click.echo("Sending image...")
             card.send_image(image)
@@ -56,13 +59,14 @@ def _build_cli(click: object) -> object:
 
         _click.echo("Waiting for NFC card...")
         with EInkCard() as card:
-            card.authenticate()
-
-            panel = card.get_panel_type()
-            _click.echo(f"Panel type: {panel}")
-
-            device_info = card.get_device_info()
-            _click.echo(f"Device info: {device_info.hex()}")
+            di = card.device_info
+            _click.echo(f"Serial:         {card.serial_number}")
+            _click.echo(f"Screen:         {di.width}x{di.height}")
+            _click.echo(f"Colors:         {di.num_colors}")
+            _click.echo(f"Bits/pixel:     {di.bits_per_pixel}")
+            _click.echo(f"Rows/block:     {di.rows_per_block}")
+            _click.echo(f"Block size:     {di.block_size} bytes")
+            _click.echo(f"Total blocks:   {di.num_blocks}")
 
     return cli
 

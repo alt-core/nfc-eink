@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
+from nfc_eink.device import DeviceInfo, parse_device_info
 from nfc_eink.exceptions import (
     AuthenticationError,
     CommunicationError,
@@ -15,7 +16,6 @@ from nfc_eink.image import encode_image
 from nfc_eink.protocol import (
     build_auth_apdu,
     build_device_info_apdu,
-    build_panel_type_apdu,
     build_poll_apdu,
     build_refresh_apdu,
     is_refresh_complete,
@@ -28,18 +28,15 @@ if TYPE_CHECKING:
 class EInkCard:
     """NFC e-ink card communication manager.
 
+    On connect, the card is automatically authenticated and device info
+    is read, making serial_number and device_info immediately available.
+
     Usage::
 
-        # Auto-detect reader and wait for card
         with EInkCard() as card:
+            print(card.serial_number)
             card.send_image(Image.open("photo.png"))
             card.refresh()
-
-        # Use an existing nfcpy tag
-        card = EInkCard(tag=my_tag)
-        card.authenticate()
-        card.send_image(pixels_2d_array)
-        card.refresh()
     """
 
     def __init__(self, tag: Any = None) -> None:
@@ -51,9 +48,22 @@ class EInkCard:
         """
         self._tag = tag
         self._clf: Any = None
+        self._device_info: DeviceInfo | None = None
+
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        """Detected device information, available after connect."""
+        return self._device_info
+
+    @property
+    def serial_number(self) -> str:
+        """Device serial number, available after connect."""
+        if self._device_info is None:
+            return ""
+        return self._device_info.serial_number
 
     def connect(self, reader: str = "usb") -> None:
-        """Connect to an NFC reader and wait for a card.
+        """Connect to an NFC reader, wait for a card, authenticate, and read device info.
 
         Blocks until a card is detected on the reader.
 
@@ -75,10 +85,22 @@ class EInkCard:
         except IOError as e:
             raise CommunicationError(f"Cannot open NFC reader '{reader}': {e}") from e
 
-        tag = self._clf.connect(rdwr={"on-connect": lambda tag: tag})
-        if tag is None or tag is False:
+        def on_connect(tag: Any) -> bool:
+            self._tag = tag
+            return True
+
+        result = self._clf.connect(rdwr={"on-connect": on_connect})
+        if not result or self._tag is None:
             raise CommunicationError("No card detected")
-        self._tag = tag
+
+        self.authenticate()
+        self._read_device_info()
+
+    def _read_device_info(self) -> None:
+        """Read and parse device info from the card."""
+        cla, ins, p1, p2, data = build_device_info_apdu()
+        raw = self._send_apdu(cla, ins, p1, p2, data, mrl=256)
+        self._device_info = parse_device_info(raw)
 
     def close(self) -> None:
         """Close the NFC connection."""
@@ -110,24 +132,7 @@ class EInkCard:
         mrl: int = 0,
         check_status: bool = True,
     ) -> bytes:
-        """Send an APDU command via nfcpy.
-
-        Args:
-            cla: Class byte.
-            ins: Instruction byte.
-            p1: Parameter 1.
-            p2: Parameter 2.
-            data: Command data (optional).
-            mrl: Maximum response length.
-            check_status: If True, raise on non-9000 status.
-
-        Returns:
-            Response data bytes (excluding status word).
-
-        Raises:
-            CommunicationError: If no tag is connected.
-            StatusWordError: If check_status is True and status != 9000.
-        """
+        """Send an APDU command via nfcpy."""
         if self._tag is None:
             raise CommunicationError("Not connected to a card")
 
@@ -137,11 +142,18 @@ class EInkCard:
             )
             return bytes(response) if response else b""
         except Exception as e:
-            if "Type4TagCommandError" in type(e).__name__:
-                raise StatusWordError(
-                    getattr(e, "errno", 0x6F) >> 8,
-                    getattr(e, "errno", 0x00) & 0xFF,
+            err_name = type(e).__name__
+            if "TimeoutError" in err_name or "timeout" in str(e).lower():
+                raise CommunicationError(
+                    "Card communication timed out (card may have been removed)"
                 ) from e
+            if "Type4TagCommandError" in err_name:
+                errno = getattr(e, "errno", 0)
+                if errno == 0:
+                    raise CommunicationError(
+                        "Card communication lost"
+                    ) from e
+                raise StatusWordError(errno >> 8, errno & 0xFF) from e
             raise CommunicationError(f"APDU command failed: {e}") from e
 
     def authenticate(self) -> None:
@@ -160,7 +172,8 @@ class EInkCard:
         """Send an image to the card.
 
         Accepts either a PIL Image (requires Pillow) or a 2D list of
-        color indices (300 rows x 400 columns, values 0-3).
+        color indices matching the device's screen dimensions.
+        Image encoding parameters are automatically determined from device info.
 
         Args:
             image: PIL Image or 2D list of color indices.
@@ -169,20 +182,25 @@ class EInkCard:
             CommunicationError: If sending fails.
             NfcEinkError: If image format is invalid.
         """
-        # Check if it's a PIL Image
         try:
             from PIL import Image as PILImage
 
             if isinstance(image, PILImage.Image):
                 from nfc_eink.convert import convert_image
 
-                pixels = convert_image(image)
+                di = self._device_info
+                if di is not None:
+                    pixels = convert_image(
+                        image, di.width, di.height, di.num_colors
+                    )
+                else:
+                    pixels = convert_image(image)
             else:
                 pixels = image
         except ImportError:
             pixels = image
 
-        apdus = encode_image(pixels)
+        apdus = encode_image(pixels, self._device_info)
 
         for block_apdus in apdus:
             for cla, ins, p1, p2, data in block_apdus:
@@ -199,11 +217,9 @@ class EInkCard:
             NfcEinkError: If refresh times out.
             CommunicationError: If communication fails during refresh.
         """
-        # Start refresh
         cla, ins, p1, p2, data = build_refresh_apdu()
         self._send_apdu(cla, ins, p1, p2, data)
 
-        # Poll until complete
         cla, ins, p1, p2, data = build_poll_apdu()
         deadline = time.monotonic() + timeout
 
@@ -214,22 +230,3 @@ class EInkCard:
             time.sleep(poll_interval)
 
         raise NfcEinkError(f"Screen refresh timed out after {timeout}s")
-
-    def get_device_info(self) -> bytes:
-        """Query device info.
-
-        Returns:
-            Raw device info bytes.
-        """
-        cla, ins, p1, p2, data = build_device_info_apdu()
-        return self._send_apdu(cla, ins, p1, p2, data, mrl=256)
-
-    def get_panel_type(self) -> str:
-        """Query panel type.
-
-        Returns:
-            Panel type string (e.g. "4_color Screen").
-        """
-        cla, ins, p1, p2, data = build_panel_type_apdu()
-        response = self._send_apdu(cla, ins, p1, p2, data, mrl=256)
-        return response.decode("ascii", errors="replace")

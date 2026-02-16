@@ -1,82 +1,87 @@
 """Image encoding for NFC e-ink cards.
 
 Handles pixel packing, block splitting, LZO compression, and fragmentation.
-This module works with raw color index arrays (0=Black, 1=White, 2=Yellow, 3=Red)
-and does not depend on Pillow.
+This module works with raw color index arrays and does not depend on Pillow.
+
+Supports both 2-color (1bpp) and 4-color (2bpp) devices.
 """
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from lzallright import LZOCompressor
 
-from nfc_eink.protocol import (
-    BLOCK_ROWS,
-    BLOCK_SIZE,
-    BYTES_PER_ROW,
-    MAX_FRAGMENT_DATA,
-    NUM_BLOCKS,
-    SCREEN_HEIGHT,
-    SCREEN_WIDTH,
-    Apdu,
-    build_image_apdu,
-)
+from nfc_eink.protocol import MAX_FRAGMENT_DATA, Apdu, build_image_apdu
+
+if TYPE_CHECKING:
+    from nfc_eink.device import DeviceInfo
 
 
-def pack_row(pixels: list[int]) -> bytes:
+def pack_row(pixels: list[int], bits_per_pixel: int = 2) -> bytes:
     """Pack a single row of color index pixels into bytes.
 
-    Packs 4 pixels per byte using: byte = p0 | (p1 << 2) | (p2 << 4) | (p3 << 6)
-    Byte order within a row is right-to-left (last 4 pixels become first byte).
+    Byte order within a row is right-to-left.
+
+    For 2bpp (4-color): byte = p0 | (p1 << 2) | (p2 << 4) | (p3 << 6)
+    For 1bpp (2-color): byte = p0 | (p1 << 1) | ... | (p7 << 7)
 
     Args:
-        pixels: List of 400 color index values (0..3).
+        pixels: Color index values for one row.
+        bits_per_pixel: 1 for 2-color, 2 for 4-color.
 
     Returns:
-        100 bytes of packed pixel data.
+        Packed pixel bytes.
     """
-    row_bytes = bytearray(BYTES_PER_ROW)
-    for byte_idx in range(BYTES_PER_ROW):
-        # Right-to-left: byte 0 = rightmost 4 pixels, byte 99 = leftmost 4 pixels
-        pixel_offset = (BYTES_PER_ROW - 1 - byte_idx) * 4
-        p0 = pixels[pixel_offset]
-        p1 = pixels[pixel_offset + 1]
-        p2 = pixels[pixel_offset + 2]
-        p3 = pixels[pixel_offset + 3]
-        row_bytes[byte_idx] = p0 | (p1 << 2) | (p2 << 4) | (p3 << 6)
+    ppb = 8 // bits_per_pixel  # pixels per byte
+    width = len(pixels)
+    bytes_per_row = width // ppb
+    row_bytes = bytearray(bytes_per_row)
+
+    for byte_idx in range(bytes_per_row):
+        pixel_offset = (bytes_per_row - 1 - byte_idx) * ppb
+        val = 0
+        for i in range(ppb):
+            val |= pixels[pixel_offset + i] << (i * bits_per_pixel)
+        row_bytes[byte_idx] = val
+
     return bytes(row_bytes)
 
 
-def pack_pixels(pixels: list[list[int]]) -> bytes:
+def pack_pixels(
+    pixels: list[list[int]], bits_per_pixel: int = 2
+) -> bytes:
     """Pack a full screen of pixels into bytes.
 
     Args:
-        pixels: 2D list of color indices, shape (300, 400).
+        pixels: 2D list of color indices, shape (height, width).
+        bits_per_pixel: 1 for 2-color, 2 for 4-color.
 
     Returns:
-        30000 bytes of packed pixel data.
+        Packed pixel data bytes.
     """
-    return b"".join(pack_row(row) for row in pixels)
+    return b"".join(pack_row(row, bits_per_pixel) for row in pixels)
 
 
-def split_blocks(packed: bytes) -> list[bytes]:
-    """Split packed pixel data into 15 blocks of 2000 bytes each.
+def split_blocks(packed: bytes, block_size: int) -> list[bytes]:
+    """Split packed pixel data into blocks.
 
     Args:
-        packed: 30000 bytes of packed pixel data.
+        packed: Packed pixel data bytes.
+        block_size: Bytes per block.
 
     Returns:
-        List of 15 blocks, each 2000 bytes.
+        List of blocks.
     """
-    return [
-        packed[i * BLOCK_SIZE : (i + 1) * BLOCK_SIZE] for i in range(NUM_BLOCKS)
-    ]
+    num_blocks = len(packed) // block_size
+    return [packed[i * block_size : (i + 1) * block_size] for i in range(num_blocks)]
 
 
 def compress_block(block: bytes) -> bytes:
-    """Compress a 2000-byte block using LZO1X-1.
+    """Compress a block using LZO1X-1.
 
     Args:
-        block: 2000 bytes of uncompressed block data.
+        block: Uncompressed block data.
 
     Returns:
         LZO-compressed bytes.
@@ -100,19 +105,28 @@ def make_fragments(compressed: bytes) -> list[bytes]:
     return fragments
 
 
-def encode_image(pixels: list[list[int]]) -> list[list[Apdu]]:
+def encode_image(
+    pixels: list[list[int]],
+    device_info: DeviceInfo | None = None,
+) -> list[list[Apdu]]:
     """Encode a full image into APDU commands ready for transmission.
 
     Args:
-        pixels: 2D list of color indices, shape (300, 400).
-            Values: 0=Black, 1=White, 2=Yellow, 3=Red.
+        pixels: 2D list of color indices, shape (height, width).
+        device_info: Device parameters. If None, assumes 400x300 4-color.
 
     Returns:
-        List of 15 blocks, each containing a list of APDU tuples.
-        Each APDU is (cla, ins, p1, p2, data).
+        List of blocks, each containing a list of APDU tuples.
     """
-    packed = pack_pixels(pixels)
-    blocks = split_blocks(packed)
+    if device_info is not None:
+        bpp = device_info.bits_per_pixel
+        bs = device_info.block_size
+    else:
+        bpp = 2
+        bs = 2000  # 400x300 4-color default
+
+    packed = pack_pixels(pixels, bpp)
+    blocks = split_blocks(packed, bs)
     all_apdus: list[list[Apdu]] = []
 
     for block_no, block in enumerate(blocks):
