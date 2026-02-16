@@ -53,6 +53,29 @@ def _build_cli(click: object) -> object:
             _click.echo("Done!")
 
     @cli.command()
+    def clear() -> None:
+        """Clear the display to white."""
+        from nfc_eink.card import EInkCard
+
+        _click.echo("Waiting for NFC card...")
+        with EInkCard() as card:
+            di = card.device_info
+            _click.echo(
+                f"Card: {card.serial_number} "
+                f"({di.width}x{di.height}, {di.num_colors} colors)"
+            )
+
+            # All-white pixel array (color index 1 = white)
+            pixels = [[1] * di.width for _ in range(di.height)]
+            _click.echo("Sending white image...")
+            card.send_image(pixels)
+
+            _click.echo("Refreshing display...")
+            card.refresh()
+
+            _click.echo("Done!")
+
+    @cli.command()
     def info() -> None:
         """Show device information."""
         from nfc_eink.card import EInkCard
@@ -64,18 +87,24 @@ def _build_cli(click: object) -> object:
             _click.echo(f"Screen:         {di.width}x{di.height}")
             _click.echo(f"Colors:         {di.num_colors}")
             _click.echo(f"Bits/pixel:     {di.bits_per_pixel}")
-            _click.echo(f"Rows/block:     {di.rows_per_block}")
-            _click.echo(f"Block size:     {di.block_size} bytes")
-            _click.echo(f"Total blocks:   {di.num_blocks}")
+            _click.echo(f"Rotated FB:     {di.rotated}")
+            _click.echo(f"Framebuffer:    {di.fb_width}x{di.fb_height}")
+            _click.echo(f"Blocks:         {di.num_blocks} ({'+'.join(str(s) for s in di.block_sizes)} bytes)")
 
     @cli.command()
-    @_click.argument("scenario", default="S1")
+    @_click.argument("scenario", default="black")
     def diag(scenario: str) -> None:
-        """Diagnose image transfer. Scenarios: S1, S2, S5, S6."""
-        from nfc_eink.card import EInkCard
-        from nfc_eink.image import compress_block
+        """Basic device diagnostics.
 
-        scenario = scenario.upper()
+        \b
+        Scenarios:
+          black   - Fill screen with BLACK (raw block transfer test)
+          stripe  - Alternating B/W stripes per block (block mapping test)
+        """
+        from nfc_eink.card import EInkCard
+        from nfc_eink.image import compress_block, make_fragments
+
+        scenario = scenario.lower()
 
         _click.echo("Waiting for NFC card...")
         with EInkCard() as card:
@@ -84,66 +113,42 @@ def _build_cli(click: object) -> object:
                 f"Card: {card.serial_number} "
                 f"({di.width}x{di.height}, {di.num_colors} colors)"
             )
+            _click.echo(
+                f"Blocks: {di.num_blocks} "
+                f"({'+'.join(str(s) for s in di.block_sizes)} bytes)"
+            )
 
-            white = compress_block(b"\xff" * di.block_size)
+            def send_block(block_no: int, raw_data: bytes) -> None:
+                comp = compress_block(raw_data)
+                frags = make_fragments(comp)
+                for frag_no, frag in enumerate(frags):
+                    is_final = frag_no == len(frags) - 1
+                    p2 = 0x01 if is_final else 0x00
+                    data = bytes([block_no, frag_no]) + frag
+                    card._send_apdu(0xF0, 0xD3, 0, p2, data)
 
-            def send_d(p1: int, block_no: int) -> str:
-                """Send F0D3 with given P1 and blockNo. Returns 'OK' or SW."""
-                data = bytes([block_no, 0]) + white
-                try:
-                    card._send_apdu(0xF0, 0xD3, p1, 0x01, data)
-                    return "OK"
-                except Exception as e:
-                    return str(e)
+            if scenario == "black":
+                _click.echo("\n--- Fill all blocks with BLACK ---")
+                for blk_no, size in enumerate(di.block_sizes):
+                    send_block(blk_no, b"\x00" * size)
+                    _click.echo(f"  blk={blk_no} ({size}B): OK")
 
-            if scenario == "S1":
-                _click.echo("\n--- S1: blockNo=2 alone (no prior blocks) ---")
-                _click.echo(f"  D(P1=0,blk=2): {send_d(0, 2)}")
-
-            elif scenario == "S2":
-                _click.echo("\n--- S2: P1 page switch (blockNo reset) ---")
-                _click.echo("  D(P1=0,blk=0) D(P1=0,blk=1) D(P1=1,blk=0) D(P1=1,blk=1)")
-                for p1, blk in [(0, 0), (0, 1), (1, 0), (1, 1)]:
-                    result = send_d(p1, blk)
-                    _click.echo(f"  D(P1={p1},blk={blk}): {result}")
-                    if result != "OK":
-                        break
-
-            elif scenario == "S5":
-                _click.echo("\n--- S5: Refresh Case3 (current: data=0x00) ---")
-                _click.echo("  Sending 4 blocks first (S2 pattern)...")
-                for p1, blk in [(0, 0), (0, 1), (1, 0), (1, 1)]:
-                    result = send_d(p1, blk)
-                    _click.echo(f"  D(P1={p1},blk={blk}): {result}")
-                    if result != "OK":
-                        _click.echo("  Image transfer failed, skipping refresh.")
-                        return
-                _click.echo("  Refresh (Case3: data=0x00)...")
-                try:
-                    card._send_apdu(0xF0, 0xD4, 0x85, 0x80, b"\x00")
-                    _click.echo("  Refresh: OK")
-                except Exception as e:
-                    _click.echo(f"  Refresh: {e}")
-
-            elif scenario == "S6":
-                _click.echo("\n--- S6: Refresh Case2 (data=None, Le=256) ---")
-                _click.echo("  Sending 4 blocks first (S2 pattern)...")
-                for p1, blk in [(0, 0), (0, 1), (1, 0), (1, 1)]:
-                    result = send_d(p1, blk)
-                    _click.echo(f"  D(P1={p1},blk={blk}): {result}")
-                    if result != "OK":
-                        _click.echo("  Image transfer failed, skipping refresh.")
-                        return
-                _click.echo("  Refresh (Case2: Le=0x00)...")
-                try:
-                    card._send_apdu(0xF0, 0xD4, 0x85, 0x80, None, mrl=256)
-                    _click.echo("  Refresh: OK")
-                except Exception as e:
-                    _click.echo(f"  Refresh: {e}")
+            elif scenario == "stripe":
+                _click.echo("\n--- Alternating B/W stripes ---")
+                for blk_no, size in enumerate(di.block_sizes):
+                    fill = 0x00 if blk_no % 2 == 0 else 0xFF
+                    label = "BLACK" if fill == 0x00 else "WHITE"
+                    send_block(blk_no, bytes([fill]) * size)
+                    _click.echo(f"  blk={blk_no} ({size}B) = {label}: OK")
 
             else:
                 _click.echo(f"Unknown scenario: {scenario}")
-                _click.echo("Available: S1, S2, S5, S6")
+                _click.echo("Available: black, stripe")
+                return
+
+            _click.echo("Refreshing...")
+            card.refresh()
+            _click.echo("Done!")
 
     return cli
 

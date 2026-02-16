@@ -48,6 +48,20 @@ def pack_row(pixels: list[int], bits_per_pixel: int = 2) -> bytes:
     return bytes(row_bytes)
 
 
+def rotate_cw90(pixels: list[list[int]]) -> list[list[int]]:
+    """Rotate a 2D pixel array 90 degrees clockwise.
+
+    Args:
+        pixels: 2D list, shape (H, W).
+
+    Returns:
+        Rotated 2D list, shape (W, H).
+    """
+    h = len(pixels)
+    w = len(pixels[0])
+    return [[pixels[h - 1 - c][r] for c in range(h)] for r in range(w)]
+
+
 def pack_pixels(
     pixels: list[list[int]], bits_per_pixel: int = 2
 ) -> bytes:
@@ -63,16 +77,23 @@ def pack_pixels(
     return b"".join(pack_row(row, bits_per_pixel) for row in pixels)
 
 
-def split_blocks(packed: bytes, block_size: int) -> list[bytes]:
+def split_blocks(packed: bytes, block_size: int | list[int]) -> list[bytes]:
     """Split packed pixel data into blocks.
 
     Args:
         packed: Packed pixel data bytes.
-        block_size: Bytes per block.
+        block_size: Uniform size (int) or list of per-block sizes.
 
     Returns:
         List of blocks.
     """
+    if isinstance(block_size, list):
+        blocks: list[bytes] = []
+        offset = 0
+        for size in block_size:
+            blocks.append(packed[offset : offset + size])
+            offset += size
+        return blocks
     num_blocks = len(packed) // block_size
     return [packed[i * block_size : (i + 1) * block_size] for i in range(num_blocks)]
 
@@ -111,8 +132,8 @@ def encode_image(
 ) -> list[list[Apdu]]:
     """Encode a full image into APDU commands ready for transmission.
 
-    For devices that use page-based addressing (e.g. 2-color),
-    P1 is set as the page selector and blockNo resets per page.
+    For 2-color devices, the pixel array is rotated 90deg CW to match
+    the device's internal framebuffer layout (128-wide x 296-tall).
 
     Args:
         pixels: 2D list of color indices, shape (height, width).
@@ -123,28 +144,25 @@ def encode_image(
     """
     if device_info is not None:
         bpp = device_info.bits_per_pixel
-        bs = device_info.block_size
-        bpp_page = device_info.blocks_per_page
+        block_sizes = device_info.block_sizes
+        if device_info.rotated:
+            pixels = rotate_cw90(pixels)
     else:
         bpp = 2
-        bs = 2000  # 400x300 4-color default
-        bpp_page = 15  # all blocks in one page
+        block_sizes = [2000] * 15  # 400x300 4-color default
 
     packed = pack_pixels(pixels, bpp)
-    blocks = split_blocks(packed, bs)
+    blocks = split_blocks(packed, block_sizes)
     all_apdus: list[list[Apdu]] = []
 
-    for abs_block_no, block in enumerate(blocks):
-        page = abs_block_no // bpp_page
-        block_no = abs_block_no % bpp_page
-
+    for block_no, block in enumerate(blocks):
         compressed = compress_block(block)
         fragments = make_fragments(compressed)
         block_apdus: list[Apdu] = []
 
         for frag_no, fragment in enumerate(fragments):
             is_final = frag_no == len(fragments) - 1
-            apdu = build_image_apdu(block_no, frag_no, fragment, is_final, page)
+            apdu = build_image_apdu(block_no, frag_no, fragment, is_final)
             block_apdus.append(apdu)
 
         all_apdus.append(block_apdus)

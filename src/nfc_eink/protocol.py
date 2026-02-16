@@ -82,13 +82,17 @@ def build_device_info_apdu() -> tuple[int, int, int, int, None]:
     return (0x00, 0xD1, 0x00, 0x00, None)
 
 
-def build_panel_type_apdu() -> Apdu:
-    """Build the panel type query APDU (F0D8).
+def build_panel_type_apdu(num_blocks: int = 15) -> Apdu:
+    """Build the panel type configuration APDU (F0D8).
+
+    Args:
+        num_blocks: Total number of blocks (default 15 for 4-color).
 
     Returns:
-        APDU tuple for querying panel type.
+        APDU tuple for setting panel type.
     """
-    return (0xF0, 0xD8, 0x00, 0x00, b"\x05\x00\x00\x00\x00\x0E")
+    max_block_no = num_blocks - 1
+    return (0xF0, 0xD8, 0x00, 0x00, b"\x00\x00\x00\x00" + bytes([max_block_no]))
 
 
 def is_refresh_complete(response: bytes) -> bool:

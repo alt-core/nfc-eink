@@ -9,6 +9,7 @@ from nfc_eink.image import (
     make_fragments,
     pack_pixels,
     pack_row,
+    rotate_cw90,
     split_blocks,
 )
 from nfc_eink.protocol import MAX_FRAGMENT_DATA
@@ -69,40 +70,69 @@ class TestPackRow2Color:
     """Tests for 2-color (1bpp) packing."""
 
     def test_all_black(self):
-        pixels = [0] * 296
+        pixels = [0] * 128
         result = pack_row(pixels, bits_per_pixel=1)
-        assert len(result) == 37
-        assert result == b"\x00" * 37
+        assert len(result) == 16
+        assert result == b"\x00" * 16
 
     def test_all_white(self):
-        pixels = [1] * 296
+        pixels = [1] * 128
         result = pack_row(pixels, bits_per_pixel=1)
         assert all(b == 0xFF for b in result)
 
     def test_packing_formula(self):
         """byte = p0 | (p1 << 1) | ... | (p7 << 7)"""
-        pixels = [0] * 296
-        # Rightmost 8 pixels (indices 288..295) → byte 0
-        pixels[288] = 1  # bit 0
-        pixels[289] = 0  # bit 1
-        pixels[290] = 1  # bit 2
-        pixels[291] = 0  # bit 3
-        pixels[292] = 0  # bit 4
-        pixels[293] = 0  # bit 5
-        pixels[294] = 0  # bit 6
-        pixels[295] = 0  # bit 7
+        pixels = [0] * 128
+        # Rightmost 8 pixels (indices 120..127) -> byte 0
+        pixels[120] = 1  # bit 0
+        pixels[121] = 0  # bit 1
+        pixels[122] = 1  # bit 2
+        pixels[123] = 0  # bit 3
+        pixels[124] = 0  # bit 4
+        pixels[125] = 0  # bit 5
+        pixels[126] = 0  # bit 6
+        pixels[127] = 0  # bit 7
         result = pack_row(pixels, bits_per_pixel=1)
         expected = 1 | (0 << 1) | (1 << 2)  # 0b00000101 = 0x05
         assert result[0] == expected
 
     def test_right_to_left_byte_order(self):
-        pixels = [0] * 296
-        # Leftmost 8 pixels → last byte
+        pixels = [0] * 128
+        # Leftmost 8 pixels -> last byte
         for i in range(8):
             pixels[i] = 1
         result = pack_row(pixels, bits_per_pixel=1)
-        assert result[36] == 0xFF
-        assert all(b == 0 for b in result[:36])
+        assert result[15] == 0xFF
+        assert all(b == 0 for b in result[:15])
+
+
+class TestRotateCw90:
+    def test_dimensions(self):
+        pixels = [[0] * 296 for _ in range(128)]
+        rotated = rotate_cw90(pixels)
+        assert len(rotated) == 296
+        assert len(rotated[0]) == 128
+
+    def test_pixel_mapping(self):
+        """CW 90: rotated[y'][x'] = pixels[H-1-x'][y']"""
+        pixels = [[0] * 4 for _ in range(3)]
+        # Place a marker at physical top-left (0, 0)
+        pixels[0][0] = 1
+        rotated = rotate_cw90(pixels)
+        # After CW 90, top-left of physical -> top-right of internal
+        assert rotated[0][2] == 1
+
+    def test_simple_rotation(self):
+        # Input 2x3:
+        # [[1, 2, 3],
+        #  [4, 5, 6]]
+        pixels = [[1, 2, 3], [4, 5, 6]]
+        rotated = rotate_cw90(pixels)
+        # CW 90 should give 3x2:
+        # [[4, 1],
+        #  [5, 2],
+        #  [6, 3]]
+        assert rotated == [[4, 1], [5, 2], [6, 3]]
 
 
 class TestPackPixels:
@@ -112,9 +142,10 @@ class TestPackPixels:
         assert len(result) == 30000
 
     def test_2color_output_size(self):
-        pixels = [[1] * 296 for _ in range(128)]
+        """After rotation, rows are 128 wide -> 16 bytes each, 296 rows."""
+        pixels = [[1] * 128 for _ in range(296)]
         result = pack_pixels(pixels, bits_per_pixel=1)
-        assert len(result) == 37 * 128  # 4736
+        assert len(result) == 16 * 296  # 4736
 
 
 class TestSplitBlocks:
@@ -126,19 +157,26 @@ class TestSplitBlocks:
 
     def test_2color_split(self):
         packed = b"\x00" * 4736
-        blocks = split_blocks(packed, block_size=1184)
-        assert len(blocks) == 4
-        assert all(len(b) == 1184 for b in blocks)
+        blocks = split_blocks(packed, block_size=[2000, 2000, 736])
+        assert len(blocks) == 3
+        assert len(blocks[0]) == 2000
+        assert len(blocks[1]) == 2000
+        assert len(blocks[2]) == 736
 
     def test_preserves_data(self):
         packed = bytes(range(256)) * (30000 // 256) + bytes(range(30000 % 256))
         blocks = split_blocks(packed, block_size=2000)
         assert b"".join(blocks) == packed
 
+    def test_list_preserves_data(self):
+        packed = b"\xAA" * 2000 + b"\xBB" * 2000 + b"\xCC" * 736
+        blocks = split_blocks(packed, block_size=[2000, 2000, 736])
+        assert b"".join(blocks) == packed
+
 
 class TestCompressBlock:
     def test_roundtrip(self):
-        block = bytes(range(256)) * 8  # 2048 → trim to 2000
+        block = bytes(range(256)) * 8  # 2048 -> trim to 2000
         block = block[:2000]
         compressed = compress_block(block)
         decompressed = LZOCompressor.decompress(compressed, output_size_hint=2000)
@@ -173,10 +211,10 @@ class TestEncodeImage:
         result = encode_image(pixels, DEVICE_4COLOR)
         assert len(result) == 15
 
-    def test_2color_returns_4_blocks(self):
+    def test_2color_returns_3_blocks(self):
         pixels = [[1] * 296 for _ in range(128)]
         result = encode_image(pixels, DEVICE_2COLOR)
-        assert len(result) == 4
+        assert len(result) == 3
 
     def test_last_fragment_is_final(self):
         pixels = [[1] * 400 for _ in range(300)]
@@ -194,31 +232,25 @@ class TestEncodeImage:
         assert len(result) == 15
 
     def test_4color_all_page0(self):
-        """4-color device: all blocks use P1=0 (single page)."""
+        """4-color device: all blocks use P1=0."""
         pixels = [[1] * 400 for _ in range(300)]
         result = encode_image(pixels, DEVICE_4COLOR)
         for block_apdus in result:
             for cla, ins, p1, p2, data in block_apdus:
                 assert p1 == 0
 
-    def test_2color_page_switching(self):
-        """2-color device: blocks split across pages via P1."""
+    def test_2color_all_page0(self):
+        """2-color device: all blocks use P1=0, blockNo=0,1,2."""
         pixels = [[1] * 296 for _ in range(128)]
         result = encode_image(pixels, DEVICE_2COLOR)
-        assert len(result) == 4
-        # First 2 blocks: P1=0, blockNo=0,1
-        for block_apdus in result[:2]:
+        assert len(result) == 3
+        for block_apdus in result:
             for cla, ins, p1, p2, data in block_apdus:
                 assert p1 == 0
-        # Last 2 blocks: P1=1, blockNo=0,1
-        for block_apdus in result[2:]:
-            for cla, ins, p1, p2, data in block_apdus:
-                assert p1 == 1
-        # blockNo resets per page
-        assert result[0][0][4][0] == 0  # block 0, page 0
-        assert result[1][0][4][0] == 1  # block 1, page 0
-        assert result[2][0][4][0] == 0  # block 0, page 1
-        assert result[3][0][4][0] == 1  # block 1, page 1
+        # blockNo = 0, 1, 2
+        assert result[0][0][4][0] == 0
+        assert result[1][0][4][0] == 1
+        assert result[2][0][4][0] == 2
 
     def test_apdu_data_size_within_limit(self):
         pixels = [[0] * 296 for _ in range(128)]

@@ -2,9 +2,17 @@
 
 [日本語](README.ja.md)
 
-Python library for NFC e-ink card displays (400x300, 4-color).
+Python library for NFC e-ink card displays.
+
+Supports 4 device variants (2 resolutions x 2 color modes):
+- 400x300 / 296x128
+- 4-color (black/white/yellow/red) / 2-color (black/white)
 
 This library is an [nfcpy](https://github.com/nfcpy/nfcpy)-based implementation of the protocol described in [@niw's gist](https://gist.github.com/niw/3885b22d502bb1e145984d41568f202d#file-ezsignepaperprotocol-md). This project is independently developed and is not affiliated with or endorsed by the original protocol author.
+
+> **Disclaimer:** This library was created for personal use. No warranty is provided. Use at your own risk — the author is not responsible for any damage to your devices.
+
+> **Note:** This project was built 100% with [Claude Code](https://claude.ai/claude-code).
 
 ## Installation
 
@@ -31,8 +39,15 @@ with EInkCard() as card:
 # Send an image to the e-ink card
 nfc-eink send photo.png
 
+# Clear the display to white
+nfc-eink clear
+
 # Show device info
 nfc-eink info
+
+# Basic diagnostics (fill black / stripe pattern)
+nfc-eink diag black
+nfc-eink diag stripe
 ```
 
 ## Requirements
@@ -42,21 +57,23 @@ nfc-eink info
 - [nfcpy](https://github.com/nfcpy/nfcpy) for NFC communication
 - [lzallright](https://github.com/vlaci/lzallright) for LZO image compression
 
-## Supported Colors
+## Supported Devices
 
-| Index | Color  |
-|-------|--------|
-| 0     | Black  |
-| 1     | White  |
-| 2     | Yellow |
-| 3     | Red    |
+| Resolution | Colors | Palette |
+|-----------|--------|---------|
+| 400x300 | 4 | Black, White, Yellow, Red |
+| 400x300 | 2 | Black, White |
+| 296x128 | 4 | Black, White, Yellow, Red |
+| 296x128 | 2 | Black, White |
+
+Device parameters (resolution, color depth, block layout) are auto-detected via the 00D1 device info command.
 
 ## Advanced Usage
 
 ```python
 from nfc_eink import EInkCard
 
-# Use raw pixel data (300x400 array of color indices 0-3)
+# Use raw pixel data (array of color indices matching device dimensions)
 pixels = [[1] * 400 for _ in range(300)]  # all white
 with EInkCard() as card:
     card.send_image(pixels)

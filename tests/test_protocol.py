@@ -124,8 +124,14 @@ class TestBuildPanelTypeApdu:
     def test_panel_type_apdu(self):
         """Verify against spec: F0D8 000005000000000E."""
         cla, ins, p1, p2, data = build_panel_type_apdu()
-        raw = bytes([cla, ins, p1, p2]) + data
+        # Reconstruct raw APDU: CLA INS P1 P2 Lc Data
+        raw = bytes([cla, ins, p1, p2, len(data)]) + data
         assert raw == bytes.fromhex("F0D8000005000000000E")
+
+    def test_2color_panel_type(self):
+        """2-color device: 4 blocks, max blockNo=3."""
+        cla, ins, p1, p2, data = build_panel_type_apdu(num_blocks=4)
+        assert data == b"\x00\x00\x00\x00\x03"
 
 
 class TestIsRefreshComplete:

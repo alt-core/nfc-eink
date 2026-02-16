@@ -52,8 +52,9 @@ class TestParseDeviceInfo:
     def test_block_structure(self):
         info = parse_device_info(SAMPLE_RESPONSE)
         assert info.rows_per_block == 32
-        assert info.num_blocks == 4
-        assert info.block_size == 37 * 32  # 1184
+        # Framebuffer: 128-wide x 296-tall (rotated), 3 blocks
+        assert info.num_blocks == 3
+        assert info.block_sizes == [2000, 2000, 736]
 
     def test_serial_number(self):
         info = parse_device_info(SAMPLE_RESPONSE)
@@ -88,10 +89,13 @@ class TestDeviceInfoProperties:
         assert info.num_colors == 4
         assert info.pixels_per_byte == 4
         assert info.bytes_per_row == 100
-        assert info.block_size == 2000
+        assert info.rotated is False
+        assert info.fb_width == 400
+        assert info.fb_height == 300
+        assert info.fb_bytes_per_row == 100
+        assert info.fb_total_bytes == 30000
+        assert info.block_sizes == [2000] * 15
         assert info.num_blocks == 15
-        assert info.blocks_per_page == 15  # single page
-        assert info.num_pages == 1
 
     def test_2color_device(self):
         """Verify properties for a 296x128 2-color device."""
@@ -102,7 +106,10 @@ class TestDeviceInfoProperties:
         assert info.num_colors == 2
         assert info.pixels_per_byte == 8
         assert info.bytes_per_row == 37
-        assert info.block_size == 1184
-        assert info.num_blocks == 4
-        assert info.blocks_per_page == 2
-        assert info.num_pages == 2
+        assert info.rotated is True
+        assert info.fb_width == 128
+        assert info.fb_height == 296
+        assert info.fb_bytes_per_row == 16
+        assert info.fb_total_bytes == 4736
+        assert info.block_sizes == [2000, 2000, 736]
+        assert info.num_blocks == 3

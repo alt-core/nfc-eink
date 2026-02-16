@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Panel resolutions known to use a 90deg CW rotated framebuffer layout.
+_ROTATED_PANELS: set[tuple[int, int]] = {
+    (296, 128),
+}
+
 
 @dataclass
 class DeviceInfo:
@@ -41,30 +46,54 @@ class DeviceInfo:
         return self.width // self.pixels_per_byte
 
     @property
-    def block_size(self) -> int:
-        """Uncompressed bytes per block."""
-        return self.bytes_per_row * self.rows_per_block
+    def rotated(self) -> bool:
+        """Whether framebuffer is rotated 90deg CW relative to physical display.
+
+        Some e-ink panels store pixels in a rotated layout where the
+        physical width becomes the framebuffer height and vice versa.
+        This is a hardware property of specific panel resolutions.
+        """
+        return (self.width, self.height) in _ROTATED_PANELS
+
+    @property
+    def fb_width(self) -> int:
+        """Framebuffer width in pixels (after rotation if applicable)."""
+        return self.height if self.rotated else self.width
+
+    @property
+    def fb_height(self) -> int:
+        """Framebuffer height in pixels (after rotation if applicable)."""
+        return self.width if self.rotated else self.height
+
+    @property
+    def fb_bytes_per_row(self) -> int:
+        """Packed bytes per framebuffer row."""
+        return self.fb_width // self.pixels_per_byte
+
+    @property
+    def fb_total_bytes(self) -> int:
+        """Total framebuffer size in bytes."""
+        return self.fb_bytes_per_row * self.fb_height
+
+    @property
+    def block_sizes(self) -> list[int]:
+        """List of block sizes for full-screen transfer.
+
+        Each block is at most 2000 bytes. The last block may be smaller.
+        """
+        max_bs = 2000
+        total = self.fb_total_bytes
+        sizes: list[int] = []
+        while total > 0:
+            s = min(total, max_bs)
+            sizes.append(s)
+            total -= s
+        return sizes
 
     @property
     def num_blocks(self) -> int:
         """Total number of blocks for the full screen."""
-        return self.height // self.rows_per_block
-
-    @property
-    def blocks_per_page(self) -> int:
-        """Number of blocks per F0D3 page (P1 address space).
-
-        For 2-color devices, empirically 2 blocks per page.
-        For 4-color devices, all blocks fit in a single page.
-        """
-        if self.bits_per_pixel == 1:
-            return 2
-        return self.num_blocks
-
-    @property
-    def num_pages(self) -> int:
-        """Number of F0D3 pages needed for full screen."""
-        return self.num_blocks // self.blocks_per_page
+        return len(self.block_sizes)
 
 
 def parse_tlv(data: bytes) -> dict[int, bytes]:
