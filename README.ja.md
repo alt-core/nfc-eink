@@ -17,7 +17,7 @@ NFC e-ink カードディスプレイ用の Python ライブラリです。
 ## インストール
 
 ```bash
-pip install nfc-eink[cli]
+pip install "nfc-eink[cli] @ git+https://github.com/alt-core/nfc-eink.git"
 ```
 
 ## クイックスタート

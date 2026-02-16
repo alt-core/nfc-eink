@@ -17,7 +17,7 @@ This library is an [nfcpy](https://github.com/nfcpy/nfcpy)-based implementation 
 ## Installation
 
 ```bash
-pip install nfc-eink[cli]
+pip install "nfc-eink[cli] @ git+https://github.com/alt-core/nfc-eink.git"
 ```
 
 ## Quick Start
