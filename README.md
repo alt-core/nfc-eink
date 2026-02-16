@@ -1,5 +1,7 @@
 # nfc-eink
 
+[日本語](README.ja.md)
+
 Python library for NFC e-ink card displays (400x300, 4-color).
 
 This library is an [nfcpy](https://github.com/nfcpy/nfcpy)-based implementation of the protocol described in [@niw's gist](https://gist.github.com/niw/3885b22d502bb1e145984d41568f202d#file-ezsignepaperprotocol-md). This project is independently developed and is not affiliated with or endorsed by the original protocol author.
