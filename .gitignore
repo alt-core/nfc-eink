@@ -1,4 +1,5 @@
 .claude/
+CLAUDE.md
 _reference/
 __pycache__/
 *.py[cod]

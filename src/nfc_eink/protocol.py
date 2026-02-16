@@ -30,40 +30,47 @@ def build_auth_apdu() -> Apdu:
 
 
 def build_image_apdu(
-    block_no: int, frag_no: int, fragment: bytes, is_final: bool
+    block_no: int, frag_no: int, fragment: bytes, is_final: bool,
+    page: int = 0,
 ) -> Apdu:
     """Build an image data transfer APDU (F0D3).
 
     Args:
-        block_no: Block number (0..14).
+        block_no: Block number within the page (0-based).
         frag_no: Fragment number within the block (0..).
         fragment: Compressed image fragment (max 250 bytes).
         is_final: True if this is the last fragment of the block.
+        page: Page selector (P1). 0 for single-page devices or upper half,
+              1 for lower half on 2-page devices.
 
     Returns:
         APDU tuple for image transfer.
     """
     p2 = 0x01 if is_final else 0x00
     data = bytes([block_no, frag_no]) + fragment
-    return (0xF0, 0xD3, 0x00, p2, data)
+    return (0xF0, 0xD3, page, p2, data)
 
 
-def build_refresh_apdu() -> Apdu:
+def build_refresh_apdu() -> tuple[int, int, int, int, None]:
     """Build the screen refresh start APDU (F0D4).
 
+    This is a Case 2 APDU (no command data, expects response).
+
     Returns:
-        APDU tuple for starting screen refresh.
+        APDU tuple for starting screen refresh (data=None).
     """
-    return (0xF0, 0xD4, 0x85, 0x80, b"\x00")
+    return (0xF0, 0xD4, 0x85, 0x80, None)
 
 
-def build_poll_apdu() -> Apdu:
+def build_poll_apdu() -> tuple[int, int, int, int, None]:
     """Build the refresh polling APDU (F0DE).
 
+    This is a Case 2 APDU (no command data, expects 1-byte response).
+
     Returns:
-        APDU tuple for polling refresh status.
+        APDU tuple for polling refresh status (data=None).
     """
-    return (0xF0, 0xDE, 0x00, 0x00, b"\x01")
+    return (0xF0, 0xDE, 0x00, 0x00, None)
 
 
 def build_device_info_apdu() -> tuple[int, int, int, int, None]:

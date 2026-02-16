@@ -218,7 +218,7 @@ class EInkCard:
             CommunicationError: If communication fails during refresh.
         """
         cla, ins, p1, p2, data = build_refresh_apdu()
-        self._send_apdu(cla, ins, p1, p2, data)
+        self._send_apdu(cla, ins, p1, p2, data, mrl=256)
 
         cla, ins, p1, p2, data = build_poll_apdu()
         deadline = time.monotonic() + timeout

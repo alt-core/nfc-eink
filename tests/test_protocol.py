@@ -62,6 +62,10 @@ class TestBuildImageApdu:
         assert data[0] == 2  # blockNo
         assert data[1] == 0  # fragNo
 
+    def test_page_parameter(self):
+        _, _, p1, _, _ = build_image_apdu(0, 0, b"\x00", is_final=True, page=1)
+        assert p1 == 1
+
     def test_spec_example1(self):
         """Verify against spec Example 1: F0D300011600000255555555552000000000000000B10000110000."""
         spec_hex = "F0D300011600000255555555552000000000000000B10000110000"
@@ -96,26 +100,24 @@ class TestBuildRefreshApdu:
     def test_refresh_apdu(self):
         cla, ins, p1, p2, data = build_refresh_apdu()
         assert (cla, ins, p1, p2) == (0xF0, 0xD4, 0x85, 0x80)
-        assert data == b"\x00"
+        assert data is None
 
-    def test_refresh_matches_spec(self):
-        """Verify against spec: F0D4 858000."""
+    def test_refresh_case2(self):
+        """Refresh is Case 2 APDU: CLA INS P1 P2 Le=00."""
         cla, ins, p1, p2, data = build_refresh_apdu()
-        raw = bytes([cla, ins, p1, p2]) + data
-        assert raw == bytes.fromhex("F0D4858000")
+        assert data is None  # No Lc/data; caller passes mrl=256 for Le
 
 
 class TestBuildPollApdu:
     def test_poll_apdu(self):
         cla, ins, p1, p2, data = build_poll_apdu()
         assert (cla, ins, p1, p2) == (0xF0, 0xDE, 0x00, 0x00)
-        assert data == b"\x01"
+        assert data is None
 
-    def test_poll_matches_spec(self):
-        """Verify against spec: F0DE 000001."""
+    def test_poll_case2(self):
+        """Poll is Case 2 APDU: CLA INS P1 P2 Le=01."""
         cla, ins, p1, p2, data = build_poll_apdu()
-        raw = bytes([cla, ins, p1, p2]) + data
-        assert raw == bytes.fromhex("F0DE000001")
+        assert data is None  # No Lc/data; caller passes mrl=1 for Le
 
 
 class TestBuildPanelTypeApdu:

@@ -50,6 +50,22 @@ class DeviceInfo:
         """Total number of blocks for the full screen."""
         return self.height // self.rows_per_block
 
+    @property
+    def blocks_per_page(self) -> int:
+        """Number of blocks per F0D3 page (P1 address space).
+
+        For 2-color devices, empirically 2 blocks per page.
+        For 4-color devices, all blocks fit in a single page.
+        """
+        if self.bits_per_pixel == 1:
+            return 2
+        return self.num_blocks
+
+    @property
+    def num_pages(self) -> int:
+        """Number of F0D3 pages needed for full screen."""
+        return self.num_blocks // self.blocks_per_page
+
 
 def parse_tlv(data: bytes) -> dict[int, bytes]:
     """Parse TLV (Tag-Length-Value) records from device info response.

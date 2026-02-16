@@ -111,6 +111,9 @@ def encode_image(
 ) -> list[list[Apdu]]:
     """Encode a full image into APDU commands ready for transmission.
 
+    For devices that use page-based addressing (e.g. 2-color),
+    P1 is set as the page selector and blockNo resets per page.
+
     Args:
         pixels: 2D list of color indices, shape (height, width).
         device_info: Device parameters. If None, assumes 400x300 4-color.
@@ -121,22 +124,27 @@ def encode_image(
     if device_info is not None:
         bpp = device_info.bits_per_pixel
         bs = device_info.block_size
+        bpp_page = device_info.blocks_per_page
     else:
         bpp = 2
         bs = 2000  # 400x300 4-color default
+        bpp_page = 15  # all blocks in one page
 
     packed = pack_pixels(pixels, bpp)
     blocks = split_blocks(packed, bs)
     all_apdus: list[list[Apdu]] = []
 
-    for block_no, block in enumerate(blocks):
+    for abs_block_no, block in enumerate(blocks):
+        page = abs_block_no // bpp_page
+        block_no = abs_block_no % bpp_page
+
         compressed = compress_block(block)
         fragments = make_fragments(compressed)
         block_apdus: list[Apdu] = []
 
         for frag_no, fragment in enumerate(fragments):
             is_final = frag_no == len(fragments) - 1
-            apdu = build_image_apdu(block_no, frag_no, fragment, is_final)
+            apdu = build_image_apdu(block_no, frag_no, fragment, is_final, page)
             block_apdus.append(apdu)
 
         all_apdus.append(block_apdus)

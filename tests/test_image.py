@@ -193,6 +193,33 @@ class TestEncodeImage:
         result = encode_image(pixels)
         assert len(result) == 15
 
+    def test_4color_all_page0(self):
+        """4-color device: all blocks use P1=0 (single page)."""
+        pixels = [[1] * 400 for _ in range(300)]
+        result = encode_image(pixels, DEVICE_4COLOR)
+        for block_apdus in result:
+            for cla, ins, p1, p2, data in block_apdus:
+                assert p1 == 0
+
+    def test_2color_page_switching(self):
+        """2-color device: blocks split across pages via P1."""
+        pixels = [[1] * 296 for _ in range(128)]
+        result = encode_image(pixels, DEVICE_2COLOR)
+        assert len(result) == 4
+        # First 2 blocks: P1=0, blockNo=0,1
+        for block_apdus in result[:2]:
+            for cla, ins, p1, p2, data in block_apdus:
+                assert p1 == 0
+        # Last 2 blocks: P1=1, blockNo=0,1
+        for block_apdus in result[2:]:
+            for cla, ins, p1, p2, data in block_apdus:
+                assert p1 == 1
+        # blockNo resets per page
+        assert result[0][0][4][0] == 0  # block 0, page 0
+        assert result[1][0][4][0] == 1  # block 1, page 0
+        assert result[2][0][4][0] == 0  # block 0, page 1
+        assert result[3][0][4][0] == 1  # block 1, page 1
+
     def test_apdu_data_size_within_limit(self):
         pixels = [[0] * 296 for _ in range(128)]
         result = encode_image(pixels, DEVICE_2COLOR)
