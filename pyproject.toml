@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nfc-eink"
+version = "0.1.0"
+description = "Python library for NFC e-ink card displays"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [
+    { name = "mass" },
+]
+keywords = ["nfc", "e-ink", "e-paper", "epaper"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Hardware",
+]
+dependencies = [
+    "nfcpy>=1.0.4",
+    "lzallright>=0.2.6",
+]
+
+[project.optional-dependencies]
+images = ["Pillow>=10.0"]
+cli = ["click>=8.0", "Pillow>=10.0"]
+dev = ["pytest", "pytest-cov", "Pillow>=10.0"]
+
+[project.scripts]
+nfc-eink = "nfc_eink.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nfc_eink"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
