@@ -26,7 +26,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 # ---------------------------------------------------------------------------
 # Palette colors (must match nfc_eink.convert.PALETTES)
@@ -233,6 +233,29 @@ def draw_seed(
     )
 
 
+def draw_header(
+    img: Image.Image,
+    serial: str,
+    step: int,
+) -> None:
+    """Draw serial number and step at the top of the canvas (binary, no AA)."""
+    canvas_w = img.width
+    text = f"{serial}  step {step}"
+    # Pick the largest font size that fits within the canvas width
+    for size in (14, 12, 11, 10, 9, 8):
+        font = ImageFont.load_default(size=size)
+        bbox = font.getbbox(text)
+        tw = bbox[2] - bbox[0]
+        if tw + 6 <= canvas_w:
+            break
+    th = bbox[3] - bbox[1]
+    # Render text on a 1-bit image to avoid antialiasing
+    txt_img = Image.new("1", (tw + 4, th + 4), 1)  # white
+    ImageDraw.Draw(txt_img).text((2, 2 - bbox[1]), text, fill=0, font=font)
+    # Paste onto the main RGB canvas
+    img.paste(txt_img.convert("RGB"), (2, 1))
+
+
 def draw_ground(
     draw: ImageDraw.ImageDraw,
     width: int, ground_y: float,
@@ -302,6 +325,7 @@ def generate_tree_image_landscape(
 
     ground_y = height - GROUND_MARGIN
     draw_ground(draw, width, ground_y)
+    draw_header(img, serial, step)
 
     # Layout: derive per-device positions from serial
     layout_seed = hashlib.sha256(f"{serial}:layout".encode()).digest()
@@ -356,6 +380,7 @@ def generate_tree_image_portrait(
     trunk_x = vis_w // 2
 
     draw_ground(draw, vis_w, ground_y)
+    draw_header(img, serial, step)
     # Slightly scale down to reduce horizontal overflow on narrow canvas
     draw_single_tree(
         draw, serial, 0, step,
