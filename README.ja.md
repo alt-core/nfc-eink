@@ -111,6 +111,18 @@ with EInkCard() as card:
     card.refresh()
 ```
 
+## デモ
+
+`examples/tree_demo.py` — NFC e-ink カードにデバイス固有の L-system 樹木を育てるデモです。シリアル番号から決定論的に木の形状が生成され、タッチするたびに1段階成長します。
+
+```bash
+# デモ実行 (NFC カードをループで待機)
+python examples/tree_demo.py
+
+# プレビューモード: NFC 機器なしで各ステップの画像を PNG 出力
+python examples/tree_demo.py --preview DEMO001
+```
+
 ## ライセンス
 
 MIT

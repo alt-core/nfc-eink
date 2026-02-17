@@ -111,6 +111,18 @@ with EInkCard() as card:
     card.refresh()
 ```
 
+## Demo
+
+`examples/tree_demo.py` — an interactive demo that grows unique L-system trees on e-ink cards. Each device gets a deterministic tree shape based on its serial number, and each touch advances the growth by one step.
+
+```bash
+# Run the demo (waits for NFC cards in a loop)
+python examples/tree_demo.py
+
+# Preview mode: generate step images as PNG without NFC hardware
+python examples/tree_demo.py --preview DEMO001
+```
+
 ## License
 
 MIT
