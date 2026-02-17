@@ -168,7 +168,9 @@ class EInkCard:
         except (StatusWordError, CommunicationError) as e:
             raise AuthenticationError(f"Authentication failed: {e}") from e
 
-    def send_image(self, image: Any, dither: str = "pillow") -> None:
+    def send_image(
+        self, image: Any, dither: str = "pillow", resize: str = "fit",
+    ) -> None:
         """Send an image to the card.
 
         Accepts either a PIL Image (requires Pillow) or a 2D list of
@@ -180,6 +182,8 @@ class EInkCard:
             dither: Dithering algorithm for PIL Image conversion.
                 One of 'pillow' (default), 'atkinson', 'floyd-steinberg',
                 'jarvis', 'stucki', 'none'.
+            resize: Resize mode for PIL Image conversion.
+                'fit' (default) adds white margins, 'cover' crops excess.
 
         Raises:
             CommunicationError: If sending fails.
@@ -200,10 +204,10 @@ class EInkCard:
             if di is not None:
                 pixels = convert_image(
                     image, di.width, di.height, di.num_colors,
-                    dither=dither,
+                    dither=dither, resize=resize,
                 )
             else:
-                pixels = convert_image(image, dither=dither)
+                pixels = convert_image(image, dither=dither, resize=resize)
         else:
             pixels = image
 

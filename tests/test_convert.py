@@ -272,6 +272,43 @@ class TestPalettes:
         assert EINK_PALETTE == PALETTES[4]
 
 
+class TestResizeMode:
+    def test_fit_adds_margins(self):
+        """Fit mode: landscape image on square target gets top/bottom margins."""
+        img = Image.new("RGB", (200, 100), (0, 0, 0))
+        result = convert_image(img, width=100, height=100, num_colors=2, resize="fit")
+        # Top and bottom rows should be white (index 1) due to margins
+        assert result[0][50] == 1  # top margin
+        assert result[99][50] == 1  # bottom margin
+        assert result[50][50] == 0  # center should be black
+
+    def test_cover_fills_target(self):
+        """Cover mode: landscape image on square target crops sides."""
+        img = Image.new("RGB", (200, 100), (0, 0, 0))
+        result = convert_image(img, width=100, height=100, num_colors=2, resize="cover")
+        # Entire target should be black (no white margins)
+        assert all(pixel == 0 for row in result for pixel in row)
+
+    def test_cover_output_dimensions(self):
+        img = Image.new("RGB", (800, 400), (128, 128, 128))
+        result = convert_image(img, width=400, height=300, num_colors=4, resize="cover")
+        assert len(result) == 300
+        assert all(len(row) == 400 for row in result)
+
+    def test_fit_output_dimensions(self):
+        img = Image.new("RGB", (800, 400), (128, 128, 128))
+        result = convert_image(img, width=400, height=300, num_colors=4, resize="fit")
+        assert len(result) == 300
+        assert all(len(row) == 400 for row in result)
+
+    def test_invalid_resize_mode(self):
+        import pytest
+
+        img = Image.new("RGB", (20, 20), (255, 255, 255))
+        with pytest.raises(ValueError, match="Unknown resize mode"):
+            convert_image(img, width=20, height=20, resize="stretch")
+
+
 class TestUnsupportedNumColors:
     def test_convert_image_rejects_unsupported_num_colors(self):
         import pytest

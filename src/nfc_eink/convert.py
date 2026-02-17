@@ -245,26 +245,44 @@ def _fit_image(
     image: Image.Image,
     width: int,
     height: int,
+    resize: str = "fit",
 ) -> Image.Image:
-    """Resize image to fit within target dimensions, preserving aspect ratio.
+    """Resize image to target dimensions, preserving aspect ratio.
 
-    The image is centered on a white background.
+    Args:
+        image: Source PIL Image.
+        width: Target width.
+        height: Target height.
+        resize: Resize mode.
+            'fit': Scale to fit within target, white margins (default).
+            'cover': Scale to fill target, crop excess.
     """
     from PIL import Image as PILImage
 
     image = image.convert("RGB")
 
-    scale = min(width / image.width, height / image.height)
+    if resize == "cover":
+        scale = max(width / image.width, height / image.height)
+    else:
+        scale = min(width / image.width, height / image.height)
+
     new_w = int(image.width * scale)
     new_h = int(image.height * scale)
 
     resized = image.resize((new_w, new_h), PILImage.LANCZOS)
 
-    result = PILImage.new("RGB", (width, height), (255, 255, 255))
-    offset_x = (width - new_w) // 2
-    offset_y = (height - new_h) // 2
-    result.paste(resized, (offset_x, offset_y))
-    return result
+    if resize == "cover":
+        # Center crop to target size
+        left = (new_w - width) // 2
+        top = (new_h - height) // 2
+        return resized.crop((left, top, left + width, top + height))
+    else:
+        # Center on white background
+        result = PILImage.new("RGB", (width, height), (255, 255, 255))
+        offset_x = (width - new_w) // 2
+        offset_y = (height - new_h) // 2
+        result.paste(resized, (offset_x, offset_y))
+        return result
 
 
 def convert_image(
@@ -273,11 +291,12 @@ def convert_image(
     height: int = SCREEN_HEIGHT,
     num_colors: int = 4,
     dither: str = "pillow",
+    resize: str = "fit",
 ) -> list[list[int]]:
     """Convert a PIL Image to a color index array for e-ink display.
 
-    The image is resized to fit the target dimensions (preserving aspect ratio,
-    white background), then dithered to the target palette.
+    The image is resized to the target dimensions (preserving aspect ratio),
+    then dithered to the target palette.
 
     Args:
         image: Source PIL Image (any mode).
@@ -289,6 +308,9 @@ def convert_image(
             'pillow' uses Pillow's built-in Floyd-Steinberg in RGB space.
             Other methods use CIELAB color space for perceptually accurate
             results but are slower.
+        resize: Resize mode. 'fit' (default) scales to fit within target
+            with white margins. 'cover' scales to fill target and crops
+            the excess.
 
     Returns:
         2D list of color indices, shape (height, width).
@@ -308,7 +330,14 @@ def convert_image(
             f"run 'nfc-eink info' to check raw device data."
         )
 
-    fitted = _fit_image(image, width, height)
+    valid_resize = ("fit", "cover")
+    if resize not in valid_resize:
+        raise ValueError(
+            f"Unknown resize mode: {resize!r}. "
+            f"Available: {', '.join(valid_resize)}"
+        )
+
+    fitted = _fit_image(image, width, height, resize=resize)
 
     if dither == "pillow":
         return _quantize_pillow(fitted, num_colors, width, height)

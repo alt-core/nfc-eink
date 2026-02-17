@@ -36,7 +36,13 @@ def _build_cli(click: object) -> object:
         default="pillow",
         help="Dithering algorithm (default: pillow).",
     )
-    def send(image_path: str, dither: str) -> None:
+    @_click.option(
+        "--resize", "-r",
+        type=_click.Choice(["fit", "cover"], case_sensitive=False),
+        default="fit",
+        help="Resize mode: fit (white margins) or cover (crop excess). Default: fit.",
+    )
+    def send(image_path: str, dither: str, resize: str) -> None:
         """Send an image to the e-ink card and refresh the display."""
         from PIL import Image
 
@@ -53,8 +59,8 @@ def _build_cli(click: object) -> object:
                 f"({di.width}x{di.height}, {di.num_colors} colors)"
             )
 
-            _click.echo(f"Sending image (dither={dither})...")
-            card.send_image(image, dither=dither)
+            _click.echo(f"Sending image (dither={dither}, resize={resize})...")
+            card.send_image(image, dither=dither, resize=resize)
 
             _click.echo("Refreshing display...")
             card.refresh()

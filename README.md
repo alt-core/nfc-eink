@@ -39,6 +39,9 @@ with EInkCard() as card:
 # Send an image to the e-ink card
 nfc-eink send photo.png
 
+# Fill the display (crop excess instead of adding margins)
+nfc-eink send photo.png --resize cover
+
 # Clear the display to white
 nfc-eink clear
 

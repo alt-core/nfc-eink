@@ -39,6 +39,9 @@ with EInkCard() as card:
 # 画像をカードに送信
 nfc-eink send photo.png
 
+# 画面いっぱいに表示 (はみ出た部分をクロップ)
+nfc-eink send photo.png --resize cover
+
 # 画面を白でクリア
 nfc-eink clear
 
