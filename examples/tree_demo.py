@@ -444,7 +444,7 @@ def _wait_for_removal(card: object, poll_interval: float = 0.5) -> None:
 DEBOUNCE_SECONDS = 1.5  # ignore re-detection shortly after removal
 
 
-def nfc_loop() -> None:
+def nfc_loop(wait_for_removal: bool = True) -> None:
     """Main NFC loop: wait for cards and grow trees."""
     try:
         from nfc_eink import CommunicationError, EInkCard, NfcEinkError
@@ -503,9 +503,10 @@ def nfc_loop() -> None:
                         print(f"    {s}: step {st}{marker}")
 
                 # Wait for the card to be removed before accepting next touch
-                print("  Remove the card from the reader...")
-                _wait_for_removal(card)
-                print("  Card removed.")
+                if wait_for_removal:
+                    print("  Remove the card from the reader...")
+                    _wait_for_removal(card)
+                    print("  Card removed.")
 
         except KeyboardInterrupt:
             print("\nExiting.")
@@ -517,9 +518,9 @@ def nfc_loop() -> None:
             print(f"  Unexpected error: {type(e).__name__}: {e}")
             time.sleep(1)
 
-        # Debounce: brief pause after removal to avoid re-detecting
-        # a card that is still being lifted from the reader
-        time.sleep(DEBOUNCE_SECONDS)
+        # Debounce: brief pause to avoid re-detecting a card that is
+        # still being lifted, or to space out back-to-back touches.
+        time.sleep(DEBOUNCE_SECONDS if wait_for_removal else 2)
         print()
 
 
@@ -553,12 +554,17 @@ def main() -> None:
         default=7,
         help="Maximum growth step for preview mode (default: 7).",
     )
+    parser.add_argument(
+        "--no-wait",
+        action="store_true",
+        help="Don't wait for card removal between touches.",
+    )
     args = parser.parse_args()
 
     if args.preview is not None:
         preview_mode(args.preview, args.output_dir, args.max_step)
     else:
-        nfc_loop()
+        nfc_loop(wait_for_removal=not args.no_wait)
 
 
 if __name__ == "__main__":
