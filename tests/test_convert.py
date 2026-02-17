@@ -270,3 +270,19 @@ class TestPalettes:
 
     def test_backward_compat(self):
         assert EINK_PALETTE == PALETTES[4]
+
+
+class TestUnsupportedNumColors:
+    def test_convert_image_rejects_unsupported_num_colors(self):
+        import pytest
+
+        img = Image.new("RGB", (20, 20), (255, 255, 255))
+        with pytest.raises(ValueError, match="Unsupported num_colors=128"):
+            convert_image(img, width=20, height=20, num_colors=128)
+
+    def test_error_message_suggests_info_command(self):
+        import pytest
+
+        img = Image.new("RGB", (20, 20), (255, 255, 255))
+        with pytest.raises(ValueError, match="nfc-eink info"):
+            convert_image(img, width=20, height=20, num_colors=128)

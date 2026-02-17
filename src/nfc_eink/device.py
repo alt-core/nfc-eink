@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 # Panel resolutions known to use a 90deg CW rotated framebuffer layout.
 _ROTATED_PANELS: set[tuple[int, int]] = {
@@ -19,7 +22,11 @@ class DeviceInfo:
         height: Screen height in pixels (e.g. 300, 128).
         bits_per_pixel: Color depth (1 = 2-color, 2 = 4-color).
         rows_per_block: Number of pixel rows per transfer block.
-        serial_number: Device serial string (e.g. "SEAA000282").
+        serial_number: Per-device ASCII string from C0 tag
+            (e.g. "SEAA000282"). Likely a serial number based on
+            the format, but not confirmed by specification.
+        c1: Per-device binary value from C1 tag (4 bytes observed).
+            Purpose unknown; differs between individual devices.
         raw: Original response bytes.
     """
 
@@ -28,6 +35,7 @@ class DeviceInfo:
     bits_per_pixel: int
     rows_per_block: int
     serial_number: str
+    c1: bytes = b""
     raw: bytes = b""
 
     @property
@@ -118,12 +126,25 @@ def parse_tlv(data: bytes) -> dict[int, bytes]:
     return result
 
 
+# Map A0 color mode byte to bits_per_pixel.
+# a0[1] is NOT bpp directly; it's a color mode code.
+# The "height" field in A0 stores physical_height * bpp.
+_COLOR_MODE_TO_BPP: dict[int, int] = {
+    0x01: 1,  # 2-color (black/white)
+    0x07: 2,  # 4-color (black/white/yellow/red)
+}
+
+
 def parse_device_info(data: bytes) -> DeviceInfo:
     """Parse 00D1 device info response into DeviceInfo.
 
     TLV structure (observed):
-        A0: [flags, color_planes, rows_per_block, height_hi, height_lo, width_hi, width_lo]
-        C0: serial number (ASCII)
+        A0: [flags, color_mode, rows_per_block, height_raw_hi, height_raw_lo, width_hi, width_lo]
+        C0: per-device ASCII string (10 bytes observed, e.g. "SEAA000282")
+        C1: per-device binary value (4 bytes observed, purpose unknown)
+
+    The height_raw field stores physical_height * bits_per_pixel.
+    color_mode is mapped to bpp via _COLOR_MODE_TO_BPP (0x01→1bpp, 0x07→2bpp).
 
     Args:
         data: Raw response bytes from 00D1 command.
@@ -132,7 +153,7 @@ def parse_device_info(data: bytes) -> DeviceInfo:
         Parsed DeviceInfo.
 
     Raises:
-        ValueError: If required TLV tags are missing.
+        ValueError: If required TLV tags are missing or color mode is unknown.
     """
     tlv = parse_tlv(data)
 
@@ -140,14 +161,29 @@ def parse_device_info(data: bytes) -> DeviceInfo:
         raise ValueError(f"Missing or invalid A0 tag in device info: {data.hex()}")
 
     a0 = tlv[0xA0]
-    bits_per_pixel = a0[1]
+    color_mode = a0[1]
     rows_per_block = a0[2]
-    height = (a0[3] << 8) | a0[4]
+    height_raw = (a0[3] << 8) | a0[4]
     width = (a0[5] << 8) | a0[6]
+
+    if color_mode not in _COLOR_MODE_TO_BPP:
+        a0_hex = " ".join(f"{b:02x}" for b in a0)
+        raise ValueError(
+            f"Unknown color mode 0x{color_mode:02x} in A0 tag. "
+            f"Known modes: {', '.join(f'0x{k:02x}' for k in _COLOR_MODE_TO_BPP)}. "
+            f"A0 raw: [{a0_hex}]. Full response: {data.hex()}"
+        )
+
+    bits_per_pixel = _COLOR_MODE_TO_BPP[color_mode]
+    height = height_raw // bits_per_pixel
 
     serial_number = ""
     if 0xC0 in tlv:
         serial_number = tlv[0xC0].decode("ascii", errors="replace")
+
+    c1 = b""
+    if 0xC1 in tlv:
+        c1 = tlv[0xC1]
 
     return DeviceInfo(
         width=width,
@@ -155,5 +191,6 @@ def parse_device_info(data: bytes) -> DeviceInfo:
         bits_per_pixel=bits_per_pixel,
         rows_per_block=rows_per_block,
         serial_number=serial_number,
+        c1=c1,
         raw=data,
     )

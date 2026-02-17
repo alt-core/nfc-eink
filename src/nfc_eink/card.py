@@ -57,7 +57,7 @@ class EInkCard:
 
     @property
     def serial_number(self) -> str:
-        """Device serial number, available after connect."""
+        """Per-device identifier string from C0 tag, available after connect."""
         if self._device_info is None:
             return ""
         return self._device_info.serial_number

@@ -298,6 +298,14 @@ def convert_image(
             f"Available: {', '.join(sorted(valid_methods))}"
         )
 
+    if num_colors not in PALETTES:
+        raise ValueError(
+            f"Unsupported num_colors={num_colors}. "
+            f"Supported: {', '.join(str(k) for k in sorted(PALETTES))}. "
+            f"The device may have reported unexpected parameters — "
+            f"run 'nfc-eink info' to check raw device data."
+        )
+
     fitted = _fit_image(image, width, height)
 
     if dither == "pillow":

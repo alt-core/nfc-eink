@@ -88,17 +88,27 @@ def _build_cli(click: object) -> object:
     def info() -> None:
         """Show device information."""
         from nfc_eink.card import EInkCard
+        from nfc_eink.device import parse_tlv
 
         _click.echo("Waiting for NFC card...")
         with EInkCard() as card:
             di = card.device_info
-            _click.echo(f"Serial:         {card.serial_number}")
+            _click.echo(f"C0 (device ID): {card.serial_number}")
+            _click.echo(f"C1 (unknown):   {di.c1.hex() if di.c1 else '(not present)'}")
             _click.echo(f"Screen:         {di.width}x{di.height}")
             _click.echo(f"Colors:         {di.num_colors}")
             _click.echo(f"Bits/pixel:     {di.bits_per_pixel}")
             _click.echo(f"Rotated FB:     {di.rotated}")
             _click.echo(f"Framebuffer:    {di.fb_width}x{di.fb_height}")
             _click.echo(f"Blocks:         {di.num_blocks} ({'+'.join(str(s) for s in di.block_sizes)} bytes)")
+
+            # Raw hex dump for debugging
+            if di.raw:
+                tlv = parse_tlv(di.raw)
+                if 0xA0 in tlv:
+                    a0_hex = " ".join(f"{b:02x}" for b in tlv[0xA0])
+                    _click.echo(f"Raw A0:         [{a0_hex}]")
+                _click.echo(f"Raw response:   {di.raw.hex()}")
 
     @cli.command()
     @_click.argument("scenario", default="black")
