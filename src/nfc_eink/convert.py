@@ -226,11 +226,13 @@ def _quantize_pillow(
 
     Uses RGB-space color distance (Pillow's internal implementation).
     """
+    from PIL import Image as PILImage
+
     palette_img = _build_palette_image(num_colors)
     quantized = fitted.quantize(
         colors=num_colors,
         palette=palette_img,
-        dither=1,  # Floyd-Steinberg
+        dither=PILImage.Dither.FLOYDSTEINBERG,
     )
     pixels_flat = list(quantized.getdata())
     return [

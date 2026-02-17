@@ -6,7 +6,7 @@
 
 The 4-color e-ink devices supported by this library use the following palette:
 
-| Index | Color | RGB |
+| Index | Color | RGB (for quantization) |
 |:-----:|:-----:|:---:|
 | 0 | Black | (0, 0, 0) |
 | 1 | White | (255, 255, 255) |
@@ -15,9 +15,22 @@ The 4-color e-ink devices supported by this library use the following palette:
 
 When reducing a full-color image to these 4 colors, simply mapping each pixel to the nearest palette color loses all gradients and intermediate tones. Dithering diffuses the quantization error to neighboring pixels, reproducing the original color tone at a macro level.
 
-### Issues with the Previous Implementation
+### Palette RGB Values vs Actual Display Colors
 
-The previous implementation used Pillow's `Image.quantize(dither=1)` (Floyd-Steinberg in RGB space). This had two problems:
+The palette RGB values above are **idealized** and do not match the actual colors produced by e-ink displays. Due to e-ink characteristics:
+
+- **Black**: Not perfectly black; slightly grayish
+- **White**: Not pure white; closer to cream or light gray
+- **Yellow**: A muted yellow, less vivid than (255, 255, 0)
+- **Red**: Tends toward orange, with a hue shift from pure (255, 0, 0)
+
+Since dithering approximates input colors as a mixture of palette colors, any discrepancy between the palette's CIELAB values and the actual display output causes suboptimal nearest-color selection and error diffusion directions. For example, if the actual red is more orange-like but the algorithm assumes pure red (255, 0, 0), intermediate color mappings will be less accurate.
+
+Ideally, each color should be measured on the physical device with a colorimeter, and those measured RGB values should be used as the palette. The current implementation does not perform this calibration and uses idealized RGB values. You can use `nfc-eink diag black/white/yellow/red` to display solid fills of each color for visual inspection.
+
+### Issues with Pillow-Only Dithering
+
+Pillow's `Image.quantize()` Floyd-Steinberg dithering (RGB space) has two problems:
 
 1. **Color distance in RGB space**: Euclidean distance in RGB does not match human color perception. With this heavily skewed palette (no blue, green, or purple), intermediate colors tend to be incorrectly mapped to yellow or red.
 2. **Fixed algorithm**: Pillow only supports Floyd-Steinberg dithering, which is not optimal for extremely constrained palettes.
@@ -100,7 +113,7 @@ The weight distribution pattern differs by algorithm. `*` marks the current pixe
   - Contrast is preserved
   - Shadow detail is sacrificed, but the overall impression is crisp
   - Prevents the "muddy" appearance common with extremely limited palettes
-- **Default in this library** — optimal for 4-color e-ink
+- Well-suited for extremely constrained palettes like 4-color e-ink
 
 ### Jarvis-Judice-Ninke (1976)
 
@@ -141,37 +154,39 @@ from PIL import Image
 
 img = Image.open("photo.png")
 
-# Atkinson (default) — high contrast, ideal for e-ink
+# Pillow built-in Floyd-Steinberg (default) — fast, RGB space
+pixels = convert_image(img, dither='pillow')
+
+# Atkinson — high contrast, ideal for limited palettes (CIELAB)
 pixels = convert_image(img, dither='atkinson')
 
-# Floyd-Steinberg — smooth, legacy compatible
+# Floyd-Steinberg — standard error diffusion (CIELAB)
 pixels = convert_image(img, dither='floyd-steinberg')
 
-# Jarvis-Judice-Ninke — smoothest, best for photos
+# Jarvis-Judice-Ninke — smoothest, best for photos (CIELAB)
 pixels = convert_image(img, dither='jarvis')
 
-# Stucki — similar quality to Jarvis
+# Stucki — similar quality to Jarvis (CIELAB)
 pixels = convert_image(img, dither='stucki')
 
-# No dithering — nearest color only
+# No dithering — nearest color only (CIELAB)
 pixels = convert_image(img, dither='none')
-
-# Pillow fallback — Pillow's built-in Floyd-Steinberg (RGB space)
-pixels = convert_image(img, dither='pillow')
 ```
 
 CLI usage:
 
 ```bash
-nfc-eink send photo.png                        # default: atkinson
+nfc-eink send photo.png                        # default: pillow
+nfc-eink send photo.png --dither atkinson      # CIELAB Atkinson
 nfc-eink send photo.png --dither floyd-steinberg
 nfc-eink send photo.png --dither none
-nfc-eink send photo.png --dither pillow        # Pillow fallback
 ```
 
-### Pillow Fallback
+### Pillow (Default)
 
-Specifying `dither='pillow'` uses Pillow's built-in `Image.quantize()` with Floyd-Steinberg dithering in RGB space. This is provided as a fallback in case the CIELAB-based implementation produces unexpected results. Color mapping accuracy is lower than the CIELAB-based methods since it uses Euclidean distance in RGB space.
+`dither='pillow'` (default) uses Pillow's built-in `Image.quantize()` with Floyd-Steinberg dithering in RGB space. It is fast and stable, but color mapping accuracy is lower than the CIELAB-based methods since it uses Euclidean distance in RGB space.
+
+The CIELAB-based algorithms (`atkinson`, `floyd-steinberg`, `jarvis`, `stucki`, `none`) offer better perceptual color accuracy but are slower (1-2 seconds at 400x300).
 
 ### Implementation Details
 

@@ -6,7 +6,7 @@
 
 本ライブラリが対応する 4色 e-ink デバイスのパレットは以下の通り:
 
-| インデックス | 色 | RGB |
+| インデックス | 色 | RGB (量子化用) |
 |:-----------:|:---:|:---:|
 | 0 | 黒 | (0, 0, 0) |
 | 1 | 白 | (255, 255, 255) |
@@ -15,9 +15,22 @@
 
 フルカラー画像をこの 4色に減色する際、単純に最近傍色に置き換えるとグラデーションや中間色が失われる。ディザリングは、量子化誤差を周辺ピクセルに拡散することで、マクロ的に元の色調を再現する手法である。
 
-### 現行実装の問題点
+### パレット RGB 値と実際の発色の乖離
 
-従来は Pillow の `Image.quantize(dither=1)` (Floyd-Steinberg, RGB 空間) を使用していた。これには2つの問題がある:
+上記のパレット RGB 値は**理想値**であり、実際の e-ink デバイスの発色とは異なる。e-ink の特性として:
+
+- **黒**: 完全な黒にはならず、やや灰色がかる
+- **白**: 純白ではなく、クリーム色や薄灰色に近い
+- **黄**: くすんだ黄色で、(255, 255, 0) ほど鮮やかではない
+- **赤**: オレンジ寄りの赤で、(255, 0, 0) とは色相がずれる
+
+ディザリングは「入力画像の色をパレット色の混合で近似する」処理であるため、パレットの CIELAB 値が実際の発色と乖離していると、最近傍色の選択やエラー拡散の方向が最適でなくなる。たとえば、実物では赤がオレンジ寄りであるにもかかわらず純赤 (255, 0, 0) として計算すると、中間色でのマッピング精度が低下する。
+
+理想的には、実デバイスの各色をカラーメーター等で測定し、その実測 RGB 値をパレットとして使用すべきである。現在の実装ではこのキャリブレーションは行っておらず、理想的な RGB 値をそのまま使用している。`nfc-eink diag black/white/yellow/red` で各色のベタ塗りを表示して実物の発色を確認できる。
+
+### Pillow のみの実装の問題点
+
+Pillow の `Image.quantize()` による Floyd-Steinberg ディザリング (RGB 空間) には2つの問題がある:
 
 1. **RGB 空間での色距離**: RGB の Euclidean 距離は人間の色知覚と一致しない。特にこの偏ったパレット (青・緑・紫が不在) では、中間色が黄や赤に誤マッピングされやすい
 2. **アルゴリズム固定**: Pillow は Floyd-Steinberg 以外のディザリングをサポートしておらず、極端に制限されたパレットには最適ではない
@@ -100,7 +113,7 @@ CIELAB 空間での Euclidean 距離 (CIE76 ΔE) は、人間が知覚する「�
   - コントラストが維持される
   - 暗部のディテールは犠牲になるが、全体的にクリアな印象
   - 極端に制限されたパレットでの「泥っぽさ」を防ぐ
-- **本ライブラリのデフォルト** — 4色 e-ink に最適
+- 4色 e-ink のように極端に制限されたパレットに適している
 
 ### Jarvis-Judice-Ninke (1976)
 
@@ -141,37 +154,39 @@ from PIL import Image
 
 img = Image.open("photo.png")
 
-# Atkinson (デフォルト) — 高コントラスト、e-ink向き
+# Pillow 内蔵 Floyd-Steinberg (デフォルト) — 高速、RGB空間
+pixels = convert_image(img, dither='pillow')
+
+# Atkinson — 高コントラスト、制限パレット向き (CIELAB)
 pixels = convert_image(img, dither='atkinson')
 
-# Floyd-Steinberg — 滑らか、従来互換
+# Floyd-Steinberg — 標準的なエラー拡散 (CIELAB)
 pixels = convert_image(img, dither='floyd-steinberg')
 
-# Jarvis-Judice-Ninke — 最も滑らか、写真向き
+# Jarvis-Judice-Ninke — 最も滑らか、写真向き (CIELAB)
 pixels = convert_image(img, dither='jarvis')
 
-# Stucki — Jarvis に近い品質
+# Stucki — Jarvis に近い品質 (CIELAB)
 pixels = convert_image(img, dither='stucki')
 
-# ディザリングなし — 最近傍色のみ
+# ディザリングなし — 最近傍色のみ (CIELAB)
 pixels = convert_image(img, dither='none')
-
-# Pillow フォールバック — Pillow内蔵の Floyd-Steinberg (RGB空間)
-pixels = convert_image(img, dither='pillow')
 ```
 
 CLI からの使用:
 
 ```bash
-nfc-eink send photo.png                        # デフォルト: atkinson
+nfc-eink send photo.png                        # デフォルト: pillow
+nfc-eink send photo.png --dither atkinson      # CIELAB Atkinson
 nfc-eink send photo.png --dither floyd-steinberg
 nfc-eink send photo.png --dither none
-nfc-eink send photo.png --dither pillow        # Pillowフォールバック
 ```
 
-### Pillow フォールバック
+### Pillow (デフォルト)
 
-`dither='pillow'` を指定すると、Pillow の `Image.quantize()` による Floyd-Steinberg ディザリング (RGB 空間) を使用する。これは本ライブラリの CIELAB ベース実装に問題があった場合の代替手段として用意されている。RGB 空間での色距離計算のため、CIELAB ベースの実装と比べて色変換の精度は劣る。
+`dither='pillow'` (デフォルト) は Pillow の `Image.quantize()` による Floyd-Steinberg ディザリング (RGB 空間) を使用する。高速で安定しているが、RGB 空間での色距離計算のため、CIELAB ベースの実装と比べて知覚的な色変換の精度は劣る。
+
+CIELAB ベースの各アルゴリズム (`atkinson`, `floyd-steinberg`, `jarvis`, `stucki`, `none`) は色変換の精度で優れるが、処理速度は遅い (400x300 で 1〜2秒)。
 
 ### 実装方針
 
