@@ -87,10 +87,10 @@ class EInkCard:
 
         def on_connect(tag: Any) -> bool:
             self._tag = tag
-            return True
+            return False  # Return False so connect() returns immediately with the tag
 
-        result = self._clf.connect(rdwr={"on-connect": on_connect})
-        if not result or self._tag is None:
+        tag = self._clf.connect(rdwr={"on-connect": on_connect})
+        if tag is None or self._tag is None:
             raise CommunicationError("No card detected")
 
         self.authenticate()
