@@ -168,7 +168,7 @@ class EInkCard:
         except (StatusWordError, CommunicationError) as e:
             raise AuthenticationError(f"Authentication failed: {e}") from e
 
-    def send_image(self, image: Any) -> None:
+    def send_image(self, image: Any, dither: str = "pillow") -> None:
         """Send an image to the card.
 
         Accepts either a PIL Image (requires Pillow) or a 2D list of
@@ -177,27 +177,34 @@ class EInkCard:
 
         Args:
             image: PIL Image or 2D list of color indices.
+            dither: Dithering algorithm for PIL Image conversion.
+                One of 'pillow' (default), 'atkinson', 'floyd-steinberg',
+                'jarvis', 'stucki', 'none'.
 
         Raises:
             CommunicationError: If sending fails.
             NfcEinkError: If image format is invalid.
         """
+        is_pil = False
         try:
             from PIL import Image as PILImage
 
-            if isinstance(image, PILImage.Image):
-                from nfc_eink.convert import convert_image
-
-                di = self._device_info
-                if di is not None:
-                    pixels = convert_image(
-                        image, di.width, di.height, di.num_colors
-                    )
-                else:
-                    pixels = convert_image(image)
-            else:
-                pixels = image
+            is_pil = isinstance(image, PILImage.Image)
         except ImportError:
+            pass
+
+        if is_pil:
+            from nfc_eink.convert import convert_image
+
+            di = self._device_info
+            if di is not None:
+                pixels = convert_image(
+                    image, di.width, di.height, di.num_colors,
+                    dither=dither,
+                )
+            else:
+                pixels = convert_image(image, dither=dither)
+        else:
             pixels = image
 
         apdus = encode_image(pixels, self._device_info)

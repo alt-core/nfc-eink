@@ -68,6 +68,29 @@ nfc-eink diag stripe
 
 Device parameters (resolution, color depth, block layout) are auto-detected via the 00D1 device info command.
 
+## Dithering
+
+Image conversion uses error diffusion dithering in [CIELAB](https://en.wikipedia.org/wiki/CIELAB_color_space) color space for perceptually accurate color mapping. See [docs/dithering.md](docs/dithering.md) for details.
+
+| Algorithm | Default | Description |
+|-----------|:-------:|-------------|
+| `pillow` | yes | Pillow built-in (Floyd-Steinberg in RGB space, fast) |
+| `atkinson` | | High contrast, ideal for limited palettes (CIELAB) |
+| `floyd-steinberg` | | Standard error diffusion (CIELAB) |
+| `jarvis` | | Smoothest, best for photos (CIELAB) |
+| `stucki` | | Similar to Jarvis (CIELAB) |
+| `none` | | Nearest color only (CIELAB) |
+
+```python
+with EInkCard() as card:
+    card.send_image(Image.open("photo.png"), dither="jarvis")
+    card.refresh()
+```
+
+```bash
+nfc-eink send photo.png --dither jarvis
+```
+
 ## Advanced Usage
 
 ```python

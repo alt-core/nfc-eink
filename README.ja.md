@@ -68,6 +68,29 @@ nfc-eink diag stripe
 
 デバイスのパラメータ (解像度、色数、ブロック構成) は 00D1 コマンドで自動検出されます。
 
+## ディザリング
+
+画像変換では [CIELAB](https://ja.wikipedia.org/wiki/L*a*b*%E8%A1%A8%E8%89%B2%E7%B3%BB) 色空間でのエラー拡散ディザリングを使用し、知覚的に正確な色変換を行います。詳細は [docs/dithering.ja.md](docs/dithering.ja.md) を参照してください。
+
+| アルゴリズム | デフォルト | 説明 |
+|-------------|:--------:|------|
+| `pillow` | yes | Pillow 内蔵 (RGB空間 Floyd-Steinberg、高速) |
+| `atkinson` | | 高コントラスト、制限パレット向き (CIELAB) |
+| `floyd-steinberg` | | 標準的なエラー拡散 (CIELAB) |
+| `jarvis` | | 最も滑らか、写真向き (CIELAB) |
+| `stucki` | | Jarvis に近い品質 (CIELAB) |
+| `none` | | 最近傍色のみ (CIELAB) |
+
+```python
+with EInkCard() as card:
+    card.send_image(Image.open("photo.png"), dither="jarvis")
+    card.refresh()
+```
+
+```bash
+nfc-eink send photo.png --dither jarvis
+```
+
 ## 応用
 
 ```python

@@ -31,9 +31,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-images = ["Pillow>=10.0"]
-cli = ["click>=8.0", "Pillow>=10.0"]
-dev = ["pytest", "pytest-cov", "Pillow>=10.0"]
+images = ["Pillow>=10.0", "numpy>=1.20"]
+cli = ["click>=8.0", "Pillow>=10.0", "numpy>=1.20"]
+dev = ["pytest", "pytest-cov", "Pillow>=10.0", "numpy>=1.20"]
 
 [project.scripts]
 nfc-eink = "nfc_eink.cli:main"
