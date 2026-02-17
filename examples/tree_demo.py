@@ -429,6 +429,21 @@ def preview_mode(serial: str, output_dir: Path, max_step: int = 7) -> None:
 # NFC main loop
 # ---------------------------------------------------------------------------
 
+def _wait_for_removal(card: object, poll_interval: float = 0.5) -> None:
+    """Poll the card until it is removed from the reader."""
+    while True:
+        try:
+            # Any APDU that gets a response means the card is still present.
+            # Use the poll command (F0DE) as a lightweight presence check.
+            card._send_apdu(0xF0, 0xDE, 0, 0, None, mrl=1, check_status=False)
+            time.sleep(poll_interval)
+        except Exception:
+            return  # Card removed (communication error)
+
+
+DEBOUNCE_SECONDS = 1.5  # ignore re-detection shortly after removal
+
+
 def nfc_loop() -> None:
     """Main NFC loop: wait for cards and grow trees."""
     try:
@@ -487,6 +502,11 @@ def nfc_loop() -> None:
                         marker = " <--" if s == serial else ""
                         print(f"    {s}: step {st}{marker}")
 
+                # Wait for the card to be removed before accepting next touch
+                print("  Remove the card from the reader...")
+                _wait_for_removal(card)
+                print("  Card removed.")
+
         except KeyboardInterrupt:
             print("\nExiting.")
             break
@@ -497,8 +517,9 @@ def nfc_loop() -> None:
             print(f"  Unexpected error: {type(e).__name__}: {e}")
             time.sleep(1)
 
-        # Brief pause before next card detection
-        time.sleep(2)
+        # Debounce: brief pause after removal to avoid re-detecting
+        # a card that is still being lifted from the reader
+        time.sleep(DEBOUNCE_SECONDS)
         print()
 
 
