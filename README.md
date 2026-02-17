@@ -45,8 +45,13 @@ nfc-eink clear
 # Show device info
 nfc-eink info
 
-# Basic diagnostics (fill black / stripe pattern)
+# Solid color fill (for display testing / calibration)
 nfc-eink diag black
+nfc-eink diag white
+nfc-eink diag yellow   # 4-color devices only
+nfc-eink diag red      # 4-color devices only
+
+# Block mapping test
 nfc-eink diag stripe
 ```
 

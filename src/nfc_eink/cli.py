@@ -117,7 +117,10 @@ def _build_cli(click: object) -> object:
 
         \b
         Scenarios:
-          black   - Fill screen with BLACK (raw block transfer test)
+          black   - Fill screen with black
+          white   - Fill screen with white
+          yellow  - Fill screen with yellow (4-color devices only)
+          red     - Fill screen with red (4-color devices only)
           stripe  - Alternating B/W stripes per block (block mapping test)
         """
         from nfc_eink.card import EInkCard
@@ -146,23 +149,50 @@ def _build_cli(click: object) -> object:
                     data = bytes([block_no, frag_no]) + frag
                     card._send_apdu(0xF0, 0xD3, 0, p2, data)
 
-            if scenario == "black":
-                _click.echo("\n--- Fill all blocks with BLACK ---")
+            def fill_byte(color_index: int) -> int:
+                """Compute byte value for solid fill of a color index."""
+                ppb = di.pixels_per_byte
+                bpp = di.bits_per_pixel
+                val = 0
+                for i in range(ppb):
+                    val |= color_index << (i * bpp)
+                return val
+
+            # Solid fill scenarios: name -> (color_index, label, min_colors)
+            solid_fills = {
+                "black":  (0, "BLACK",  2),
+                "white":  (1, "WHITE",  2),
+                "yellow": (2, "YELLOW", 4),
+                "red":    (3, "RED",    4),
+            }
+
+            if scenario in solid_fills:
+                color_index, label, min_colors = solid_fills[scenario]
+                if di.num_colors < min_colors:
+                    _click.echo(
+                        f"Error: '{scenario}' requires {min_colors}-color device "
+                        f"(this device has {di.num_colors} colors)"
+                    )
+                    return
+                fill = fill_byte(color_index)
+                _click.echo(f"\n--- Fill all blocks with {label} (0x{fill:02x}) ---")
                 for blk_no, size in enumerate(di.block_sizes):
-                    send_block(blk_no, b"\x00" * size)
+                    send_block(blk_no, bytes([fill]) * size)
                     _click.echo(f"  blk={blk_no} ({size}B): OK")
 
             elif scenario == "stripe":
                 _click.echo("\n--- Alternating B/W stripes ---")
+                fill_black = fill_byte(0)
+                fill_white = fill_byte(1)
                 for blk_no, size in enumerate(di.block_sizes):
-                    fill = 0x00 if blk_no % 2 == 0 else 0xFF
-                    label = "BLACK" if fill == 0x00 else "WHITE"
+                    fill = fill_black if blk_no % 2 == 0 else fill_white
+                    label = "BLACK" if fill == fill_black else "WHITE"
                     send_block(blk_no, bytes([fill]) * size)
                     _click.echo(f"  blk={blk_no} ({size}B) = {label}: OK")
 
             else:
                 _click.echo(f"Unknown scenario: {scenario}")
-                _click.echo("Available: black, stripe")
+                _click.echo("Available: black, white, yellow, red, stripe")
                 return
 
             _click.echo("Refreshing...")

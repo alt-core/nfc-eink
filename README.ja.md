@@ -45,8 +45,13 @@ nfc-eink clear
 # デバイス情報を表示
 nfc-eink info
 
-# 基本的な動作確認 (全面黒 / ストライプパターン)
+# 単色塗りつぶし (表示テスト / キャリブレーション用)
 nfc-eink diag black
+nfc-eink diag white
+nfc-eink diag yellow   # 4色デバイスのみ
+nfc-eink diag red      # 4色デバイスのみ
+
+# ブロックマッピングテスト
 nfc-eink diag stripe
 ```
 
