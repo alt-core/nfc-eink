@@ -241,19 +241,23 @@ def draw_header(
     """Draw serial number and step at the top of the canvas (binary, no AA)."""
     canvas_w = img.width
     text = f"{serial}  step {step}"
+    margin = 3  # left margin for text
     # Pick the largest font size that fits within the canvas width
-    for size in (14, 12, 11, 10, 9, 8):
+    for size in (15, 14, 12, 11, 10, 9, 8):
         font = ImageFont.load_default(size=size)
         bbox = font.getbbox(text)
         tw = bbox[2] - bbox[0]
-        if tw + 6 <= canvas_w:
+        if margin + tw + margin <= canvas_w:
             break
     th = bbox[3] - bbox[1]
-    # Render text on a 1-bit image to avoid antialiasing
-    txt_img = Image.new("1", (tw + 4, th + 4), 1)  # white
-    ImageDraw.Draw(txt_img).text((2, 2 - bbox[1]), text, fill=0, font=font)
+    # Render text on a 1-bit image spanning full canvas width to avoid
+    # any visible boundary; text is left-aligned with a small margin.
+    txt_img = Image.new("1", (canvas_w, th + 4), 1)  # white, full width
+    ImageDraw.Draw(txt_img).text(
+        (margin - bbox[0], 2 - bbox[1]), text, fill=0, font=font,
+    )
     # Paste onto the main RGB canvas
-    img.paste(txt_img.convert("RGB"), (2, 1))
+    img.paste(txt_img.convert("RGB"), (0, 1))
 
 
 def draw_ground(
