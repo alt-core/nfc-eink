@@ -28,6 +28,12 @@ def _build_cli(click: object) -> object:
     @cli.command()
     @_click.argument("image_path", type=_click.Path(exists=True))
     @_click.option(
+        "--photo",
+        is_flag=True,
+        default=False,
+        help="Photo preset: --dither atkinson --resize cover --palette tuned --tone-map.",
+    )
+    @_click.option(
         "--dither", "-d",
         type=_click.Choice(
             ["atkinson", "floyd-steinberg", "jarvis", "stucki", "none", "pillow"],
@@ -44,20 +50,33 @@ def _build_cli(click: object) -> object:
     )
     @_click.option(
         "--palette", "-p",
-        type=_click.Choice(["pure", "measured"], case_sensitive=False),
+        type=_click.Choice(["pure", "tuned"], case_sensitive=False),
         default="pure",
-        help="Palette mode: pure (ideal RGB) or measured (actual panel colors). Default: pure.",
+        help="Palette mode: pure (ideal RGB) or tuned (adjusted for actual panel). Default: pure.",
     )
     @_click.option(
         "--tone-map/--no-tone-map",
         default=None,
-        help="Enable/disable luminance tone mapping. Default: auto (on for measured palette).",
+        help="Enable/disable luminance tone mapping. Default: auto (on for tuned palette).",
     )
-    def send(image_path: str, dither: str, resize: str, palette: str, tone_map: bool | None) -> None:
+    @_click.pass_context
+    def send(ctx: _click.Context, image_path: str, photo: bool, dither: str, resize: str, palette: str, tone_map: bool | None) -> None:
         """Send an image to the e-ink card and refresh the display."""
         from PIL import Image
 
         from nfc_eink.card import EInkCard
+
+        # --photo sets defaults; explicitly specified options take priority
+        if photo:
+            src = ctx.get_parameter_source
+            if src("dither") != _click.core.ParameterSource.COMMANDLINE:
+                dither = "atkinson"
+            if src("resize") != _click.core.ParameterSource.COMMANDLINE:
+                resize = "cover"
+            if src("palette") != _click.core.ParameterSource.COMMANDLINE:
+                palette = "tuned"
+            if src("tone_map") != _click.core.ParameterSource.COMMANDLINE:
+                tone_map = True
 
         _click.echo(f"Loading image: {image_path}")
         image = Image.open(image_path)

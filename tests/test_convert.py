@@ -8,7 +8,7 @@ from nfc_eink.convert import (
     DITHER_MATRICES,
     EINK_PALETTE,
     PALETTES,
-    PALETTES_MEASURED,
+    PALETTES_TUNED,
     PALETTES_PURE,
     _compute_l_scale,
     _dither,
@@ -280,15 +280,15 @@ class TestPalettes:
     def test_default_is_pure(self):
         assert PALETTES is PALETTES_PURE
 
-    def test_measured_palette_values(self):
-        assert PALETTES_MEASURED[4][0] == (0, 0, 0)
-        assert PALETTES_MEASURED[4][1] == (160, 160, 160)
-        assert PALETTES_MEASURED[4][2] == (200, 128, 0)
-        assert PALETTES_MEASURED[4][3] == (96, 0, 0)
+    def test_tuned_palette_values(self):
+        assert PALETTES_TUNED[4][0] == (0, 0, 0)
+        assert PALETTES_TUNED[4][1] == (160, 160, 160)
+        assert PALETTES_TUNED[4][2] == (200, 128, 0)
+        assert PALETTES_TUNED[4][3] == (160, 0, 0)
 
     def test_get_palettes(self):
         assert get_palettes("pure") is PALETTES_PURE
-        assert get_palettes("measured") is PALETTES_MEASURED
+        assert get_palettes("tuned") is PALETTES_TUNED
 
     def test_get_palettes_invalid(self):
         with pytest.raises(ValueError, match="Unknown palette mode"):
@@ -348,28 +348,28 @@ class TestUnsupportedNumColors:
             convert_image(img, width=20, height=20, num_colors=128)
 
 
-class TestMeasuredPalette:
-    """Tests for measured palette mode."""
+class TestTunedPalette:
+    """Tests for tuned palette mode."""
 
-    def test_measured_black(self):
+    def test_tuned_black(self):
         img = Image.new("RGB", (20, 20), (0, 0, 0))
-        result = convert_image(img, width=20, height=20, palette="measured")
+        result = convert_image(img, width=20, height=20, palette="tuned")
         assert all(pixel == 0 for row in result for pixel in row)
 
-    def test_measured_white(self):
+    def test_tuned_white(self):
         img = Image.new("RGB", (20, 20), (255, 255, 255))
-        result = convert_image(img, width=20, height=20, palette="measured")
+        result = convert_image(img, width=20, height=20, palette="tuned")
         assert all(pixel == 1 for row in result for pixel in row)
 
-    def test_measured_values_in_range(self):
+    def test_tuned_values_in_range(self):
         img = Image.new("RGB", (20, 20), (128, 64, 32))
-        result = convert_image(img, width=20, height=20, palette="measured")
+        result = convert_image(img, width=20, height=20, palette="tuned")
         assert all(0 <= pixel <= 3 for row in result for pixel in row)
 
-    def test_measured_with_cielab_dither(self):
+    def test_tuned_with_cielab_dither(self):
         img = Image.new("RGB", (20, 20), (100, 80, 40))
         result = convert_image(
-            img, width=20, height=20, dither="atkinson", palette="measured",
+            img, width=20, height=20, dither="atkinson", palette="tuned",
         )
         assert all(0 <= pixel <= 3 for row in result for pixel in row)
 
@@ -398,8 +398,8 @@ class TestLabToRgb:
         rgb = np.array([128, 128, 128], dtype=np.uint8)
         assert np.array_equal(lab_to_rgb(rgb_to_lab(rgb)), rgb)
 
-    def test_measured_colors_roundtrip(self):
-        for color in PALETTES_MEASURED[4]:
+    def test_tuned_colors_roundtrip(self):
+        for color in PALETTES_TUNED[4]:
             rgb = np.array(color, dtype=np.uint8)
             assert np.array_equal(lab_to_rgb(rgb_to_lab(rgb)), rgb)
 
@@ -424,16 +424,16 @@ class TestToneMapping:
         assert _compute_l_scale(PALETTES_PURE[4]) is None
         assert _compute_l_scale(PALETTES_PURE[2]) is None
 
-    def test_compute_l_scale_measured(self):
-        """Measured palette should return ~0.659."""
-        scale = _compute_l_scale(PALETTES_MEASURED[4])
+    def test_compute_l_scale_tuned(self):
+        """Tuned palette should return ~0.659."""
+        scale = _compute_l_scale(PALETTES_TUNED[4])
         assert scale is not None
         assert 0.6 < scale < 0.7
 
-    def test_tone_map_white_to_measured_white(self):
-        """White (255,255,255) should become measured white (160,160,160)."""
+    def test_tone_map_white_to_tuned_white(self):
+        """White (255,255,255) should become tuned white (160,160,160)."""
         white = np.full((5, 5, 3), 255, dtype=np.uint8)
-        l_scale = _compute_l_scale(PALETTES_MEASURED[4])
+        l_scale = _compute_l_scale(PALETTES_TUNED[4])
         mapped = _tone_map_rgb(white, l_scale)
         assert np.array_equal(mapped[0, 0], [160, 160, 160])
 
@@ -448,12 +448,12 @@ class TestToneMapping:
         mapped = _tone_map_rgb(img, 0.66)
         assert mapped.shape == (10, 20, 3)
 
-    def test_auto_on_for_measured(self):
-        """tone_map=None with measured palette should apply tone mapping."""
+    def test_auto_on_for_tuned(self):
+        """tone_map=None with tuned palette should apply tone mapping."""
         img = Image.new("RGB", (20, 20), (255, 255, 255))
         result = convert_image(
             img, width=20, height=20, dither="atkinson",
-            palette="measured",
+            palette="tuned",
         )
         # White should map entirely to index 1 (no yellow artifacts)
         assert all(pixel == 1 for row in result for pixel in row)
@@ -467,11 +467,11 @@ class TestToneMapping:
         assert all(pixel == 1 for row in result for pixel in row)
 
     def test_explicit_false(self):
-        """tone_map=False should disable even with measured palette."""
+        """tone_map=False should disable even with tuned palette."""
         img = Image.new("RGB", (20, 20), (0, 0, 0))
         result = convert_image(
             img, width=20, height=20, dither="atkinson",
-            palette="measured", tone_map=False,
+            palette="tuned", tone_map=False,
         )
         assert all(pixel == 0 for row in result for pixel in row)
 
@@ -483,11 +483,11 @@ class TestToneMappingDitherInteraction:
         "pillow", "atkinson", "floyd-steinberg", "jarvis", "stucki", "none",
     ])
     def test_neutral_bright_no_yellow(self, method):
-        """Neutral bright image with measured palette should not produce yellow."""
+        """Neutral bright image with tuned palette should not produce yellow."""
         img = Image.new("RGB", (30, 30), (240, 240, 240))
         result = convert_image(
             img, width=30, height=30, dither=method,
-            palette="measured",
+            palette="tuned",
         )
         # Should be all white (index 1), no yellow (index 2)
         assert all(pixel != 2 for row in result for pixel in row)

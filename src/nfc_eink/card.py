@@ -191,9 +191,9 @@ class EInkCard:
                 'fit' (default) adds white margins, 'cover' crops excess.
             palette: Palette mode for PIL Image conversion.
                 'pure' (default) uses ideal RGB values.
-                'measured' uses colors from an actual e-ink panel.
+                'tuned' uses colors adjusted for actual panel appearance.
             tone_map: Enable luminance tone mapping. None (default)
-                enables it automatically for 'measured' palette.
+                enables it automatically for 'tuned' palette.
 
         Raises:
             CommunicationError: If sending fails.

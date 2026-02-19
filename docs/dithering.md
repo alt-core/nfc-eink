@@ -29,14 +29,14 @@ Since dithering approximates input colors as a mixture of palette colors, any di
 This library provides two palette modes to address this:
 
 - **`palette="pure"`** (default): Uses idealized RGB values. Simple and backward-compatible.
-- **`palette="measured"`**: Uses colors measured from an actual e-ink panel. More accurate dithering at the cost of representing a narrower color gamut.
+- **`palette="tuned"`**: Uses colors tuned for actual e-ink panel appearance. More accurate dithering at the cost of representing a narrower color gamut.
 
-| Index | Color | Pure RGB | Measured RGB |
+| Index | Color | Pure RGB | Tuned RGB |
 |:-----:|:-----:|:---:|:---:|
 | 0 | Black | (0, 0, 0) | (0, 0, 0) |
 | 1 | White | (255, 255, 255) | (160, 160, 160) |
 | 2 | Yellow | (255, 255, 0) | (200, 128, 0) |
-| 3 | Red | (255, 0, 0) | (96, 0, 0) |
+| 3 | Red | (255, 0, 0) | (160, 0, 0) |
 
 You can use `nfc-eink diag black/white/yellow/red` to display solid fills of each color for visual inspection.
 
@@ -138,7 +138,7 @@ The weight distribution pattern differs by algorithm. `*` marks the current pixe
 
 - Distributes 100% of error to 12 neighbors
 - Widest error spread; produces the smoothest results
-- Excellent for photographic gradient reproduction
+- Excellent for smooth gradient reproduction
 - Slower (12 pixel writes)
 
 ### Stucki (1981)
@@ -175,7 +175,7 @@ pixels = convert_image(img, dither='atkinson')
 # Floyd-Steinberg — standard error diffusion (CIELAB)
 pixels = convert_image(img, dither='floyd-steinberg')
 
-# Jarvis-Judice-Ninke — smoothest, best for photos (CIELAB)
+# Jarvis-Judice-Ninke — smoothest, widest error spread (CIELAB)
 pixels = convert_image(img, dither='jarvis')
 
 # Stucki — similar quality to Jarvis (CIELAB)
@@ -192,6 +192,7 @@ nfc-eink send photo.png                        # default: pillow
 nfc-eink send photo.png --dither atkinson      # CIELAB Atkinson
 nfc-eink send photo.png --dither floyd-steinberg
 nfc-eink send photo.png --dither none
+nfc-eink send photo.png --photo                # photo preset (atkinson + cover + tuned + tone-map)
 ```
 
 ### Pillow (Default)
@@ -210,38 +211,39 @@ The CIELAB-based algorithms (`atkinson`, `floyd-steinberg`, `jarvis`, `stucki`, 
 
 ## Tone Mapping
 
-### The Problem with Measured Palette
+### The Problem with Tuned Palette
 
-When using `palette="measured"`, the e-ink panel's white has L\*≈66 in CIELAB (compared to L\*=100 for ideal white). This means bright areas of the input image (L\*=80–100) overshoot the palette's achievable luminance range by a large margin.
+When using `palette="tuned"`, the e-ink panel's white has L\*≈66 in CIELAB (compared to L\*=100 for ideal white). This means bright areas of the input image (L\*=80–100) overshoot the palette's achievable luminance range by a large margin.
 
 During error diffusion dithering, this large luminance error accumulates and can shift neighboring pixels into unexpected color regions — most notably causing yellow artifacts in neutral bright areas.
 
 ### Solution: Automatic L\* Scaling
 
-When `palette="measured"` is used, the library automatically applies luminance tone mapping before dithering:
+When `palette="tuned"` is used, the library automatically applies luminance tone mapping before dithering:
 
 1. Convert the input image to CIELAB color space
 2. Scale the L\* (lightness) channel: **L' = L × (L\*_max / 100)**
 3. Leave a\* and b\* (chrominance) unchanged
 
-For the measured palette, L\*_max ≈ 65.9, so the scale factor is ≈ 0.659. This maps input white (L\*=100) to exactly the measured white (L\*≈66), reducing dithering error to near zero for neutral colors.
+For the tuned palette, L\*_max ≈ 65.9, so the scale factor is ≈ 0.659. This maps input white (L\*=100) to exactly the tuned white (L\*≈66), reducing dithering error to near zero for neutral colors.
 
 Chrominance (a\*, b\*) is not scaled because the dithering algorithm handles color mixing naturally through error diffusion.
 
 ### Usage
 
 ```python
-# Automatic: tone mapping enabled with measured palette
-pixels = convert_image(img, palette='measured')
+# Automatic: tone mapping enabled with tuned palette
+pixels = convert_image(img, palette='tuned')
 
 # Explicit control
-pixels = convert_image(img, palette='measured', tone_map=False)  # disable
+pixels = convert_image(img, palette='tuned', tone_map=False)  # disable
 pixels = convert_image(img, palette='pure', tone_map=True)       # force enable
 ```
 
 ```bash
-nfc-eink send photo.png --palette measured                # auto tone mapping
-nfc-eink send photo.png --palette measured --no-tone-map  # disable
+nfc-eink send photo.png --palette tuned                # auto tone mapping
+nfc-eink send photo.png --palette tuned --no-tone-map  # disable
+nfc-eink send photo.png --photo                        # equivalent to --dither atkinson --resize cover --palette tuned --tone-map
 ```
 
 ## References

@@ -42,6 +42,9 @@ nfc-eink send photo.png
 # 画面いっぱいに表示 (はみ出た部分をクロップ)
 nfc-eink send photo.png --resize cover
 
+# 写真モード: 実写写真に最適化
+nfc-eink send photo.png --photo
+
 # 画面を白でクリア
 nfc-eink clear
 
@@ -85,7 +88,7 @@ nfc-eink diag stripe
 | `pillow` | yes | Pillow 内蔵 (RGB空間 Floyd-Steinberg、高速) |
 | `atkinson` | | 高コントラスト、制限パレット向き (CIELAB) |
 | `floyd-steinberg` | | 標準的なエラー拡散 (CIELAB) |
-| `jarvis` | | 最も滑らか、写真向き (CIELAB) |
+| `jarvis` | | 最も滑らか、広範囲エラー拡散 (CIELAB) |
 | `stucki` | | Jarvis に近い品質 (CIELAB) |
 | `none` | | 最近傍色のみ (CIELAB) |
 
@@ -98,6 +101,17 @@ with EInkCard() as card:
 ```bash
 nfc-eink send photo.png --dither jarvis
 ```
+
+### 写真モード
+
+`--photo` は実写写真に適した4つのオプションをまとめたプリセットです:
+
+- **`--dither atkinson`**: Atkinson ディザリングは量子化誤差の 25% を意図的に捨てることで、コントラストを維持しクリアな印象を生む。4色しかない極端に制限されたパレットでは、誤差を100%拡散する方式 (Floyd-Steinberg, Jarvis) だと泥っぽい仕上がりになりやすい。
+- **`--resize cover`**: 画像を画面全体に拡大し、はみ出た部分をクロップする。写真は余白なく表示した方が見栄えがよい。
+- **`--palette tuned`**: 理想的な RGB 値ではなく、実際の e-ink パネルの発色に合わせて調整されたパレットを使用する。ディザリングアルゴリズムがパネルの実際の表現能力をより正確に把握でき、色の選択精度が向上する。
+- **`--tone-map`**: 画像の輝度レンジをパネルの表現可能な明るさに圧縮する。理想の白 (L\*=100) とパネルの実際の白 (L\*≈66) の乖離が大きいため、これを行わないとディザリング誤差が蓄積し、明るい領域に黄色のアーティファクトが発生する。
+
+個別のオプションで上書きも可能: `--photo --dither jarvis` は Jarvis ディザリングを使いつつ、他の写真モード設定は維持される。
 
 ## 応用
 

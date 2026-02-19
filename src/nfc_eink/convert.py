@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from PIL import Image
 
 # Palettes indexed by number of colors.
-# "pure" uses ideal RGB values; "measured" uses values from an actual e-ink panel.
+# "pure" uses ideal RGB values; "tuned" uses values adjusted for actual e-ink panel appearance.
 PALETTES_PURE: dict[int, list[tuple[int, int, int]]] = {
     2: [
         (0, 0, 0),        # 0 = Black
@@ -31,22 +31,22 @@ PALETTES_PURE: dict[int, list[tuple[int, int, int]]] = {
     ],
 }
 
-PALETTES_MEASURED: dict[int, list[tuple[int, int, int]]] = {
+PALETTES_TUNED: dict[int, list[tuple[int, int, int]]] = {
     2: [
         (0, 0, 0),        # 0 = Black
-        (160, 160, 160),  # 1 = White (measured)
+        (160, 160, 160),  # 1 = White (tuned)
     ],
     4: [
         (0, 0, 0),        # 0 = Black
-        (160, 160, 160),  # 1 = White (measured)
-        (200, 128, 0),    # 2 = Yellow (measured)
-        (96, 0, 0),       # 3 = Red (measured)
+        (160, 160, 160),  # 1 = White (tuned)
+        (200, 128, 0),    # 2 = Yellow (tuned)
+        (160, 0, 0),      # 3 = Red (tuned)
     ],
 }
 
 _PALETTE_MODES: dict[str, dict[int, list[tuple[int, int, int]]]] = {
     "pure": PALETTES_PURE,
-    "measured": PALETTES_MEASURED,
+    "tuned": PALETTES_TUNED,
 }
 
 # Default palettes (pure)
@@ -59,7 +59,7 @@ EINK_PALETTE = PALETTES[4]
 def get_palettes(
     palette: str = "pure",
 ) -> dict[int, list[tuple[int, int, int]]]:
-    """Return palettes for the given mode ('pure' or 'measured')."""
+    """Return palettes for the given mode ('pure' or 'tuned')."""
     if palette not in _PALETTE_MODES:
         raise ValueError(
             f"Unknown palette mode: {palette!r}. "
@@ -445,11 +445,10 @@ def convert_image(
             with white margins. 'cover' scales to fill target and crops
             the excess.
         palette: Palette mode. 'pure' (default) uses ideal RGB values.
-            'measured' uses colors measured from an actual e-ink panel
-            for more accurate dithering.
+            'tuned' uses colors adjusted for actual panel appearance.
         tone_map: Enable luminance tone mapping to compress the image's
             brightness range to match the palette. None (default) enables
-            it automatically for 'measured' palette.
+            it automatically for 'tuned' palette.
 
     Returns:
         2D list of color indices, shape (height, width).
@@ -480,7 +479,7 @@ def convert_image(
 
     # Resolve tone mapping
     if tone_map is None:
-        tone_map = (palette == "measured")
+        tone_map = (palette != "pure")
 
     l_scale: float | None = None
     if tone_map:

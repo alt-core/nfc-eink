@@ -42,6 +42,9 @@ nfc-eink send photo.png
 # Fill the display (crop excess instead of adding margins)
 nfc-eink send photo.png --resize cover
 
+# Photo mode: optimized for photographs
+nfc-eink send photo.png --photo
+
 # Clear the display to white
 nfc-eink clear
 
@@ -85,7 +88,7 @@ Image conversion uses error diffusion dithering in [CIELAB](https://en.wikipedia
 | `pillow` | yes | Pillow built-in (Floyd-Steinberg in RGB space, fast) |
 | `atkinson` | | High contrast, ideal for limited palettes (CIELAB) |
 | `floyd-steinberg` | | Standard error diffusion (CIELAB) |
-| `jarvis` | | Smoothest, best for photos (CIELAB) |
+| `jarvis` | | Smoothest, widest error spread (CIELAB) |
 | `stucki` | | Similar to Jarvis (CIELAB) |
 | `none` | | Nearest color only (CIELAB) |
 
@@ -98,6 +101,17 @@ with EInkCard() as card:
 ```bash
 nfc-eink send photo.png --dither jarvis
 ```
+
+### Photo Mode
+
+`--photo` is a preset that combines four options tuned for photographic images:
+
+- **`--dither atkinson`**: Atkinson dithering discards 25% of the quantization error, which preserves contrast and produces a crisp result on the severely limited 4-color palette. Full error diffusion methods (Floyd-Steinberg, Jarvis) tend to produce muddy output when only 4 colors are available.
+- **`--resize cover`**: Scales the image to fill the entire display, cropping any excess. Photos generally look better without white margins.
+- **`--palette tuned`**: Uses palette colors adjusted to approximate the actual e-ink panel's appearance rather than idealized RGB values. This gives the dithering algorithm a more accurate model of what the display can produce, improving color decisions.
+- **`--tone-map`**: Scales the image's luminance range to fit the panel's achievable brightness. Without this, the gap between ideal white (L\*=100) and the panel's actual white (L\*≈66) causes large dithering errors that manifest as yellow artifacts in bright areas.
+
+Individual options can be overridden: `--photo --dither jarvis` uses Jarvis dithering while keeping the other photo mode defaults.
 
 ## Advanced Usage
 

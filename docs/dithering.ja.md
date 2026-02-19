@@ -29,14 +29,14 @@
 本ライブラリはこの問題に対応するため、2つのパレットモードを提供している:
 
 - **`palette="pure"`** (デフォルト): 理想的な RGB 値を使用。シンプルで後方互換性がある。
-- **`palette="measured"`**: 実際の e-ink パネルで測定された色を使用。より正確なディザリングが得られる。
+- **`palette="tuned"`**: 実際の e-ink パネルの発色に合わせて調整された色を使用。より正確なディザリングが得られる。
 
-| インデックス | 色 | Pure RGB | Measured RGB |
+| インデックス | 色 | Pure RGB | Tuned RGB |
 |:-----------:|:---:|:---:|:---:|
 | 0 | 黒 | (0, 0, 0) | (0, 0, 0) |
 | 1 | 白 | (255, 255, 255) | (160, 160, 160) |
 | 2 | 黄 | (255, 255, 0) | (200, 128, 0) |
-| 3 | 赤 | (255, 0, 0) | (96, 0, 0) |
+| 3 | 赤 | (255, 0, 0) | (160, 0, 0) |
 
 `nfc-eink diag black/white/yellow/red` で各色のベタ塗りを表示して実物の発色を確認できる。
 
@@ -138,7 +138,7 @@ CIELAB 空間での Euclidean 距離 (CIE76 ΔE) は、人間が知覚する「�
 
 - 12近傍に 100% のエラーを分配
 - 最も広範囲にエラーを拡散し、最も滑らかな結果を生む
-- 写真のグラデーション再現に優れる
+- 滑らかなグラデーション再現に優れる
 - 処理が遅い (12ピクセルへの書き込み)
 
 ### Stucki (1981)
@@ -175,7 +175,7 @@ pixels = convert_image(img, dither='atkinson')
 # Floyd-Steinberg — 標準的なエラー拡散 (CIELAB)
 pixels = convert_image(img, dither='floyd-steinberg')
 
-# Jarvis-Judice-Ninke — 最も滑らか、写真向き (CIELAB)
+# Jarvis-Judice-Ninke — 最も滑らか、広範囲エラー拡散 (CIELAB)
 pixels = convert_image(img, dither='jarvis')
 
 # Stucki — Jarvis に近い品質 (CIELAB)
@@ -192,6 +192,7 @@ nfc-eink send photo.png                        # デフォルト: pillow
 nfc-eink send photo.png --dither atkinson      # CIELAB Atkinson
 nfc-eink send photo.png --dither floyd-steinberg
 nfc-eink send photo.png --dither none
+nfc-eink send photo.png --photo                # 写真プリセット (atkinson + cover + tuned + tone-map)
 ```
 
 ### Pillow (デフォルト)
@@ -210,38 +211,39 @@ CIELAB ベースの各アルゴリズム (`atkinson`, `floyd-steinberg`, `jarvis
 
 ## トーンマッピング
 
-### Measured パレットの問題
+### Tuned パレットの問題
 
-`palette="measured"` を使用すると、e-ink パネルの白は CIELAB で L\*≈66 となる（理想の白は L\*=100）。そのため、入力画像の明るい領域（L\*=80〜100）がパレットの表現可能な輝度範囲を大幅に超過する。
+`palette="tuned"` を使用すると、e-ink パネルの白は CIELAB で L\*≈66 となる（理想の白は L\*=100）。そのため、入力画像の明るい領域（L\*=80〜100）がパレットの表現可能な輝度範囲を大幅に超過する。
 
 エラー拡散ディザリング中にこの大きな輝度エラーが蓄積すると、隣接ピクセルの色が予期しない方向にシフトし、特にニュートラルな明るい領域に黄色のアーティファクトが発生する。
 
 ### 解決策: 自動 L\* スケーリング
 
-`palette="measured"` 使用時、ディザリング前に自動的に輝度トーンマッピングを適用する:
+`palette="tuned"` 使用時、ディザリング前に自動的に輝度トーンマッピングを適用する:
 
 1. 入力画像を CIELAB 色空間に変換
 2. L\*（明度）チャンネルをスケーリング: **L' = L × (L\*_max / 100)**
 3. a\*, b\*（色相）はそのまま保持
 
-Measured パレットでは L\*_max ≈ 65.9 なので、スケール係数は ≈ 0.659。入力の白（L\*=100）が measured の白（L\*≈66）に正確にマッピングされ、ニュートラル色のディザリングエラーがほぼゼロになる。
+Tuned パレットでは L\*_max ≈ 65.9 なので、スケール係数は ≈ 0.659。入力の白（L\*=100）が tuned の白（L\*≈66）に正確にマッピングされ、ニュートラル色のディザリングエラーがほぼゼロになる。
 
 色相（a\*, b\*）はスケーリングしない。ディザリングアルゴリズムがエラー拡散を通じて色の混合を自然に処理するためである。
 
 ### 使い方
 
 ```python
-# 自動: measured パレットでトーンマッピング有効
-pixels = convert_image(img, palette='measured')
+# 自動: tuned パレットでトーンマッピング有効
+pixels = convert_image(img, palette='tuned')
 
 # 明示的な制御
-pixels = convert_image(img, palette='measured', tone_map=False)  # 無効化
+pixels = convert_image(img, palette='tuned', tone_map=False)  # 無効化
 pixels = convert_image(img, palette='pure', tone_map=True)       # 強制有効
 ```
 
 ```bash
-nfc-eink send photo.png --palette measured                # 自動トーンマッピング
-nfc-eink send photo.png --palette measured --no-tone-map  # 無効化
+nfc-eink send photo.png --palette tuned                # 自動トーンマッピング
+nfc-eink send photo.png --palette tuned --no-tone-map  # 無効化
+nfc-eink send photo.png --photo                        # --dither atkinson --resize cover --palette tuned --tone-map と同等
 ```
 
 ## 参考文献
