@@ -174,6 +174,7 @@ class EInkCard:
         dither: str = "pillow",
         resize: str = "fit",
         palette: str = "pure",
+        tone_map: bool | None = None,
     ) -> None:
         """Send an image to the card.
 
@@ -191,6 +192,8 @@ class EInkCard:
             palette: Palette mode for PIL Image conversion.
                 'pure' (default) uses ideal RGB values.
                 'measured' uses colors from an actual e-ink panel.
+            tone_map: Enable luminance tone mapping. None (default)
+                enables it automatically for 'measured' palette.
 
         Raises:
             CommunicationError: If sending fails.
@@ -212,10 +215,12 @@ class EInkCard:
                 pixels = convert_image(
                     image, di.width, di.height, di.num_colors,
                     dither=dither, resize=resize, palette=palette,
+                    tone_map=tone_map,
                 )
             else:
                 pixels = convert_image(
                     image, dither=dither, resize=resize, palette=palette,
+                    tone_map=tone_map,
                 )
         else:
             pixels = image

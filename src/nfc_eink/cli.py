@@ -48,7 +48,12 @@ def _build_cli(click: object) -> object:
         default="pure",
         help="Palette mode: pure (ideal RGB) or measured (actual panel colors). Default: pure.",
     )
-    def send(image_path: str, dither: str, resize: str, palette: str) -> None:
+    @_click.option(
+        "--tone-map/--no-tone-map",
+        default=None,
+        help="Enable/disable luminance tone mapping. Default: auto (on for measured palette).",
+    )
+    def send(image_path: str, dither: str, resize: str, palette: str, tone_map: bool | None) -> None:
         """Send an image to the e-ink card and refresh the display."""
         from PIL import Image
 
@@ -66,7 +71,7 @@ def _build_cli(click: object) -> object:
             )
 
             _click.echo(f"Sending image (dither={dither}, resize={resize}, palette={palette})...")
-            card.send_image(image, dither=dither, resize=resize, palette=palette)
+            card.send_image(image, dither=dither, resize=resize, palette=palette, tone_map=tone_map)
 
             _click.echo("Refreshing display...")
             card.refresh()

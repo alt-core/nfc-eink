@@ -26,7 +26,19 @@ The palette RGB values above are **idealized** and do not match the actual color
 
 Since dithering approximates input colors as a mixture of palette colors, any discrepancy between the palette's CIELAB values and the actual display output causes suboptimal nearest-color selection and error diffusion directions. For example, if the actual red is more orange-like but the algorithm assumes pure red (255, 0, 0), intermediate color mappings will be less accurate.
 
-Ideally, each color should be measured on the physical device with a colorimeter, and those measured RGB values should be used as the palette. The current implementation does not perform this calibration and uses idealized RGB values. You can use `nfc-eink diag black/white/yellow/red` to display solid fills of each color for visual inspection.
+This library provides two palette modes to address this:
+
+- **`palette="pure"`** (default): Uses idealized RGB values. Simple and backward-compatible.
+- **`palette="measured"`**: Uses colors measured from an actual e-ink panel. More accurate dithering at the cost of representing a narrower color gamut.
+
+| Index | Color | Pure RGB | Measured RGB |
+|:-----:|:-----:|:---:|:---:|
+| 0 | Black | (0, 0, 0) | (0, 0, 0) |
+| 1 | White | (255, 255, 255) | (160, 160, 160) |
+| 2 | Yellow | (255, 255, 0) | (200, 128, 0) |
+| 3 | Red | (255, 0, 0) | (96, 0, 0) |
+
+You can use `nfc-eink diag black/white/yellow/red` to display solid fills of each color for visual inspection.
 
 ### Issues with Pillow-Only Dithering
 
@@ -195,6 +207,42 @@ The CIELAB-based algorithms (`atkinson`, `floyd-steinberg`, `jarvis`, `stucki`, 
 - Each algorithm is simply a different weight matrix (shared core processing)
 - 2-color (black/white) mode also uses the same CIELAB-based implementation
 - A Pillow built-in quantize fallback is also available
+
+## Tone Mapping
+
+### The Problem with Measured Palette
+
+When using `palette="measured"`, the e-ink panel's white has L\*≈66 in CIELAB (compared to L\*=100 for ideal white). This means bright areas of the input image (L\*=80–100) overshoot the palette's achievable luminance range by a large margin.
+
+During error diffusion dithering, this large luminance error accumulates and can shift neighboring pixels into unexpected color regions — most notably causing yellow artifacts in neutral bright areas.
+
+### Solution: Automatic L\* Scaling
+
+When `palette="measured"` is used, the library automatically applies luminance tone mapping before dithering:
+
+1. Convert the input image to CIELAB color space
+2. Scale the L\* (lightness) channel: **L' = L × (L\*_max / 100)**
+3. Leave a\* and b\* (chrominance) unchanged
+
+For the measured palette, L\*_max ≈ 65.9, so the scale factor is ≈ 0.659. This maps input white (L\*=100) to exactly the measured white (L\*≈66), reducing dithering error to near zero for neutral colors.
+
+Chrominance (a\*, b\*) is not scaled because the dithering algorithm handles color mixing naturally through error diffusion.
+
+### Usage
+
+```python
+# Automatic: tone mapping enabled with measured palette
+pixels = convert_image(img, palette='measured')
+
+# Explicit control
+pixels = convert_image(img, palette='measured', tone_map=False)  # disable
+pixels = convert_image(img, palette='pure', tone_map=True)       # force enable
+```
+
+```bash
+nfc-eink send photo.png --palette measured                # auto tone mapping
+nfc-eink send photo.png --palette measured --no-tone-map  # disable
+```
 
 ## References
 

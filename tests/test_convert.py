@@ -10,9 +10,12 @@ from nfc_eink.convert import (
     PALETTES,
     PALETTES_MEASURED,
     PALETTES_PURE,
+    _compute_l_scale,
     _dither,
+    _tone_map_rgb,
     convert_image,
     get_palettes,
+    lab_to_rgb,
     rgb_to_lab,
 )
 
@@ -374,3 +377,117 @@ class TestMeasuredPalette:
         img = Image.new("RGB", (20, 20), (0, 0, 0))
         with pytest.raises(ValueError, match="Unknown palette mode"):
             convert_image(img, width=20, height=20, palette="invalid")
+
+
+class TestLabToRgb:
+    """Tests for CIELAB → RGB inverse conversion."""
+
+    def test_black_roundtrip(self):
+        rgb = np.array([0, 0, 0], dtype=np.uint8)
+        assert np.array_equal(lab_to_rgb(rgb_to_lab(rgb)), rgb)
+
+    def test_white_roundtrip(self):
+        rgb = np.array([255, 255, 255], dtype=np.uint8)
+        assert np.array_equal(lab_to_rgb(rgb_to_lab(rgb)), rgb)
+
+    def test_red_roundtrip(self):
+        rgb = np.array([255, 0, 0], dtype=np.uint8)
+        assert np.array_equal(lab_to_rgb(rgb_to_lab(rgb)), rgb)
+
+    def test_gray_roundtrip(self):
+        rgb = np.array([128, 128, 128], dtype=np.uint8)
+        assert np.array_equal(lab_to_rgb(rgb_to_lab(rgb)), rgb)
+
+    def test_measured_colors_roundtrip(self):
+        for color in PALETTES_MEASURED[4]:
+            rgb = np.array(color, dtype=np.uint8)
+            assert np.array_equal(lab_to_rgb(rgb_to_lab(rgb)), rgb)
+
+    def test_batch_shape(self):
+        rgb = np.zeros((10, 20, 3), dtype=np.uint8)
+        result = lab_to_rgb(rgb_to_lab(rgb))
+        assert result.shape == (10, 20, 3)
+
+    def test_out_of_gamut_clips(self):
+        """Lab values outside sRGB gamut should clip to [0, 255]."""
+        lab = np.array([50.0, 100.0, 100.0])  # very saturated
+        rgb = lab_to_rgb(lab)
+        assert rgb.dtype == np.uint8
+        assert np.all(rgb >= 0) and np.all(rgb <= 255)
+
+
+class TestToneMapping:
+    """Tests for luminance tone mapping."""
+
+    def test_compute_l_scale_pure(self):
+        """Pure palette should return None (no scaling needed)."""
+        assert _compute_l_scale(PALETTES_PURE[4]) is None
+        assert _compute_l_scale(PALETTES_PURE[2]) is None
+
+    def test_compute_l_scale_measured(self):
+        """Measured palette should return ~0.659."""
+        scale = _compute_l_scale(PALETTES_MEASURED[4])
+        assert scale is not None
+        assert 0.6 < scale < 0.7
+
+    def test_tone_map_white_to_measured_white(self):
+        """White (255,255,255) should become measured white (160,160,160)."""
+        white = np.full((5, 5, 3), 255, dtype=np.uint8)
+        l_scale = _compute_l_scale(PALETTES_MEASURED[4])
+        mapped = _tone_map_rgb(white, l_scale)
+        assert np.array_equal(mapped[0, 0], [160, 160, 160])
+
+    def test_tone_map_black_unchanged(self):
+        """Black should remain black."""
+        black = np.zeros((5, 5, 3), dtype=np.uint8)
+        mapped = _tone_map_rgb(black, 0.66)
+        assert np.all(mapped == 0)
+
+    def test_tone_map_preserves_shape(self):
+        img = np.full((10, 20, 3), 200, dtype=np.uint8)
+        mapped = _tone_map_rgb(img, 0.66)
+        assert mapped.shape == (10, 20, 3)
+
+    def test_auto_on_for_measured(self):
+        """tone_map=None with measured palette should apply tone mapping."""
+        img = Image.new("RGB", (20, 20), (255, 255, 255))
+        result = convert_image(
+            img, width=20, height=20, dither="atkinson",
+            palette="measured",
+        )
+        # White should map entirely to index 1 (no yellow artifacts)
+        assert all(pixel == 1 for row in result for pixel in row)
+
+    def test_auto_off_for_pure(self):
+        """tone_map=None with pure palette should not apply tone mapping."""
+        img = Image.new("RGB", (20, 20), (255, 255, 255))
+        result = convert_image(
+            img, width=20, height=20, dither="atkinson", palette="pure",
+        )
+        assert all(pixel == 1 for row in result for pixel in row)
+
+    def test_explicit_false(self):
+        """tone_map=False should disable even with measured palette."""
+        img = Image.new("RGB", (20, 20), (0, 0, 0))
+        result = convert_image(
+            img, width=20, height=20, dither="atkinson",
+            palette="measured", tone_map=False,
+        )
+        assert all(pixel == 0 for row in result for pixel in row)
+
+
+class TestToneMappingDitherInteraction:
+    """Verify tone mapping works correctly with all dither methods."""
+
+    @pytest.mark.parametrize("method", [
+        "pillow", "atkinson", "floyd-steinberg", "jarvis", "stucki", "none",
+    ])
+    def test_neutral_bright_no_yellow(self, method):
+        """Neutral bright image with measured palette should not produce yellow."""
+        img = Image.new("RGB", (30, 30), (240, 240, 240))
+        result = convert_image(
+            img, width=30, height=30, dither=method,
+            palette="measured",
+        )
+        # Should be all white (index 1), no yellow (index 2)
+        assert all(pixel != 2 for row in result for pixel in row)

@@ -142,10 +142,97 @@ def rgb_to_lab(rgb: np.ndarray) -> np.ndarray:
     return np.stack([L, a, b], axis=-1)
 
 
+# Inverse conversion: CIELAB → RGB
+
+_XYZ_TO_SRGB = np.linalg.inv(_SRGB_TO_XYZ)
+
+
+def _lab_f_inv(t: np.ndarray) -> np.ndarray:
+    """Inverse CIELAB transfer function."""
+    return np.where(
+        t > _LAB_DELTA,
+        t ** 3,
+        3.0 * _LAB_DELTA_SQ * (t - 4.0 / 29.0),
+    )
+
+
+def _linear_to_srgb(linear: np.ndarray) -> np.ndarray:
+    """Convert linear RGB (0-1) to sRGB (0-1)."""
+    v = np.clip(linear, 0.0, 1.0)
+    return np.where(
+        v <= 0.0031308,
+        v * 12.92,
+        1.055 * v ** (1.0 / 2.4) - 0.055,
+    )
+
+
+def lab_to_rgb(lab: np.ndarray) -> np.ndarray:
+    """Convert CIELAB to RGB (0-255).
+
+    Args:
+        lab: Array of shape (..., 3) with L*, a*, b* values.
+
+    Returns:
+        Array of same shape with uint8 RGB values, clipped to [0, 255].
+    """
+    L = lab[..., 0]
+    a = lab[..., 1]
+    b = lab[..., 2]
+    fy = (L + 16.0) / 116.0
+    fx = a / 500.0 + fy
+    fz = fy - b / 200.0
+    xyz = np.stack([
+        _D65_WHITE[0] * _lab_f_inv(fx),
+        _D65_WHITE[1] * _lab_f_inv(fy),
+        _D65_WHITE[2] * _lab_f_inv(fz),
+    ], axis=-1)
+    linear = xyz @ _XYZ_TO_SRGB.T
+    srgb = _linear_to_srgb(linear)
+    return np.clip(np.round(srgb * 255.0), 0, 255).astype(np.uint8)
+
+
+# Tone mapping helpers
+
+def _compute_l_scale(
+    palette_rgb: list[tuple[int, int, int]],
+) -> float | None:
+    """Compute L* scale factor for tone mapping.
+
+    Returns L*_max / 100 for the given palette, or None if no scaling
+    is needed (L*_max >= 99).
+    """
+    labs = rgb_to_lab(np.array(palette_rgb, dtype=np.uint8))
+    l_max = float(np.max(labs[:, 0]))
+    if l_max >= 99.0:
+        return None
+    return l_max / 100.0
+
+
+def _tone_map_rgb(
+    image_rgb: np.ndarray,
+    l_scale: float,
+) -> np.ndarray:
+    """Apply luminance tone mapping to an RGB image.
+
+    Converts to CIELAB, scales L*, converts back to RGB.
+
+    Args:
+        image_rgb: (H, W, 3) uint8 array.
+        l_scale: Multiplicative factor for L* channel (0 < l_scale <= 1).
+
+    Returns:
+        (H, W, 3) uint8 array with tone-mapped RGB values.
+    """
+    lab = rgb_to_lab(image_rgb)
+    lab[..., 0] *= l_scale
+    return lab_to_rgb(lab)
+
+
 def _dither(
     image_rgb: np.ndarray,
     palette_rgb: np.ndarray,
     method: str = "atkinson",
+    l_scale: float | None = None,
 ) -> np.ndarray:
     """Error diffusion dithering in CIELAB space.
 
@@ -156,6 +243,7 @@ def _dither(
         image_rgb: (H, W, 3) uint8 array.
         palette_rgb: (N, 3) uint8 array of palette colors.
         method: Dithering algorithm name.
+        l_scale: Optional L* scale factor for tone mapping.
 
     Returns:
         (H, W) uint8 array of palette indices.
@@ -165,6 +253,10 @@ def _dither(
     # Vectorized Lab conversion (fast batch operation)
     palette_lab = rgb_to_lab(palette_rgb)
     image_lab = rgb_to_lab(image_rgb)
+
+    # Tone mapping: compress luminance range to match palette
+    if l_scale is not None:
+        image_lab[..., 0] *= l_scale
 
     # Extract to plain Python lists for fast per-pixel access.
     # numpy indexing overhead (~μs per access) dominates when called 120k times.
@@ -332,6 +424,7 @@ def convert_image(
     dither: str = "pillow",
     resize: str = "fit",
     palette: str = "pure",
+    tone_map: bool | None = None,
 ) -> list[list[int]]:
     """Convert a PIL Image to a color index array for e-ink display.
 
@@ -354,6 +447,9 @@ def convert_image(
         palette: Palette mode. 'pure' (default) uses ideal RGB values.
             'measured' uses colors measured from an actual e-ink panel
             for more accurate dithering.
+        tone_map: Enable luminance tone mapping to compress the image's
+            brightness range to match the palette. None (default) enables
+            it automatically for 'measured' palette.
 
     Returns:
         2D list of color indices, shape (height, width).
@@ -382,14 +478,27 @@ def convert_image(
             f"Available: {', '.join(valid_resize)}"
         )
 
+    # Resolve tone mapping
+    if tone_map is None:
+        tone_map = (palette == "measured")
+
+    l_scale: float | None = None
+    if tone_map:
+        l_scale = _compute_l_scale(palettes[num_colors])
+
     fitted = _fit_image(image, width, height, resize=resize)
 
     if dither == "pillow":
+        if l_scale is not None:
+            from PIL import Image as PILImage
+
+            mapped_rgb = _tone_map_rgb(np.array(fitted, dtype=np.uint8), l_scale)
+            fitted = PILImage.fromarray(mapped_rgb)
         return _quantize_pillow(fitted, num_colors, width, height, palette)
 
     image_rgb = np.array(fitted, dtype=np.uint8)
     palette_rgb = np.array(palettes[num_colors], dtype=np.uint8)
 
-    indices = _dither(image_rgb, palette_rgb, method=dither)
+    indices = _dither(image_rgb, palette_rgb, method=dither, l_scale=l_scale)
 
     return [indices[y].tolist() for y in range(height)]
