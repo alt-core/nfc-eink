@@ -16,8 +16,9 @@ from nfc_eink.protocol import SCREEN_HEIGHT, SCREEN_WIDTH
 if TYPE_CHECKING:
     from PIL import Image
 
-# Palettes indexed by number of colors
-PALETTES: dict[int, list[tuple[int, int, int]]] = {
+# Palettes indexed by number of colors.
+# "pure" uses ideal RGB values; "measured" uses values from an actual e-ink panel.
+PALETTES_PURE: dict[int, list[tuple[int, int, int]]] = {
     2: [
         (0, 0, 0),        # 0 = Black
         (255, 255, 255),  # 1 = White
@@ -30,8 +31,41 @@ PALETTES: dict[int, list[tuple[int, int, int]]] = {
     ],
 }
 
+PALETTES_MEASURED: dict[int, list[tuple[int, int, int]]] = {
+    2: [
+        (0, 0, 0),        # 0 = Black
+        (160, 160, 160),  # 1 = White (measured)
+    ],
+    4: [
+        (0, 0, 0),        # 0 = Black
+        (160, 160, 160),  # 1 = White (measured)
+        (200, 128, 0),    # 2 = Yellow (measured)
+        (96, 0, 0),       # 3 = Red (measured)
+    ],
+}
+
+_PALETTE_MODES: dict[str, dict[int, list[tuple[int, int, int]]]] = {
+    "pure": PALETTES_PURE,
+    "measured": PALETTES_MEASURED,
+}
+
+# Default palettes (pure)
+PALETTES = PALETTES_PURE
+
 # Backward compatibility
 EINK_PALETTE = PALETTES[4]
+
+
+def get_palettes(
+    palette: str = "pure",
+) -> dict[int, list[tuple[int, int, int]]]:
+    """Return palettes for the given mode ('pure' or 'measured')."""
+    if palette not in _PALETTE_MODES:
+        raise ValueError(
+            f"Unknown palette mode: {palette!r}. "
+            f"Available: {', '.join(sorted(_PALETTE_MODES))}"
+        )
+    return _PALETTE_MODES[palette]
 
 # Dithering algorithm weight matrices.
 # Each entry: (list of (dy, dx, weight), divisor)
@@ -202,11 +236,15 @@ def _dither(
     return np.array(result, dtype=np.uint8)
 
 
-def _build_palette_image(num_colors: int = 4) -> Image.Image:
+def _build_palette_image(
+    num_colors: int = 4,
+    palette_mode: str = "pure",
+) -> Image.Image:
     """Build a Pillow palette image for quantization."""
     from PIL import Image as PILImage
 
-    palette = PALETTES[num_colors]
+    palettes = get_palettes(palette_mode)
+    palette = palettes[num_colors]
     palette_img = PILImage.new("P", (1, 1))
     palette_data: list[int] = []
     for r, g, b in palette:
@@ -221,6 +259,7 @@ def _quantize_pillow(
     num_colors: int,
     width: int,
     height: int,
+    palette_mode: str = "pure",
 ) -> list[list[int]]:
     """Fallback quantization using Pillow's built-in Floyd-Steinberg dithering.
 
@@ -228,7 +267,7 @@ def _quantize_pillow(
     """
     from PIL import Image as PILImage
 
-    palette_img = _build_palette_image(num_colors)
+    palette_img = _build_palette_image(num_colors, palette_mode)
     quantized = fitted.quantize(
         colors=num_colors,
         palette=palette_img,
@@ -292,6 +331,7 @@ def convert_image(
     num_colors: int = 4,
     dither: str = "pillow",
     resize: str = "fit",
+    palette: str = "pure",
 ) -> list[list[int]]:
     """Convert a PIL Image to a color index array for e-ink display.
 
@@ -311,6 +351,9 @@ def convert_image(
         resize: Resize mode. 'fit' (default) scales to fit within target
             with white margins. 'cover' scales to fill target and crops
             the excess.
+        palette: Palette mode. 'pure' (default) uses ideal RGB values.
+            'measured' uses colors measured from an actual e-ink panel
+            for more accurate dithering.
 
     Returns:
         2D list of color indices, shape (height, width).
@@ -322,10 +365,12 @@ def convert_image(
             f"Available: {', '.join(sorted(valid_methods))}"
         )
 
-    if num_colors not in PALETTES:
+    palettes = get_palettes(palette)
+
+    if num_colors not in palettes:
         raise ValueError(
             f"Unsupported num_colors={num_colors}. "
-            f"Supported: {', '.join(str(k) for k in sorted(PALETTES))}. "
+            f"Supported: {', '.join(str(k) for k in sorted(palettes))}. "
             f"The device may have reported unexpected parameters — "
             f"run 'nfc-eink info' to check raw device data."
         )
@@ -340,10 +385,10 @@ def convert_image(
     fitted = _fit_image(image, width, height, resize=resize)
 
     if dither == "pillow":
-        return _quantize_pillow(fitted, num_colors, width, height)
+        return _quantize_pillow(fitted, num_colors, width, height, palette)
 
     image_rgb = np.array(fitted, dtype=np.uint8)
-    palette_rgb = np.array(PALETTES[num_colors], dtype=np.uint8)
+    palette_rgb = np.array(palettes[num_colors], dtype=np.uint8)
 
     indices = _dither(image_rgb, palette_rgb, method=dither)
 

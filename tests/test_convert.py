@@ -8,8 +8,11 @@ from nfc_eink.convert import (
     DITHER_MATRICES,
     EINK_PALETTE,
     PALETTES,
+    PALETTES_MEASURED,
+    PALETTES_PURE,
     _dither,
     convert_image,
+    get_palettes,
     rgb_to_lab,
 )
 
@@ -271,6 +274,23 @@ class TestPalettes:
     def test_backward_compat(self):
         assert EINK_PALETTE == PALETTES[4]
 
+    def test_default_is_pure(self):
+        assert PALETTES is PALETTES_PURE
+
+    def test_measured_palette_values(self):
+        assert PALETTES_MEASURED[4][0] == (0, 0, 0)
+        assert PALETTES_MEASURED[4][1] == (160, 160, 160)
+        assert PALETTES_MEASURED[4][2] == (200, 128, 0)
+        assert PALETTES_MEASURED[4][3] == (96, 0, 0)
+
+    def test_get_palettes(self):
+        assert get_palettes("pure") is PALETTES_PURE
+        assert get_palettes("measured") is PALETTES_MEASURED
+
+    def test_get_palettes_invalid(self):
+        with pytest.raises(ValueError, match="Unknown palette mode"):
+            get_palettes("invalid")
+
 
 class TestResizeMode:
     def test_fit_adds_margins(self):
@@ -323,3 +343,34 @@ class TestUnsupportedNumColors:
         img = Image.new("RGB", (20, 20), (255, 255, 255))
         with pytest.raises(ValueError, match="nfc-eink info"):
             convert_image(img, width=20, height=20, num_colors=128)
+
+
+class TestMeasuredPalette:
+    """Tests for measured palette mode."""
+
+    def test_measured_black(self):
+        img = Image.new("RGB", (20, 20), (0, 0, 0))
+        result = convert_image(img, width=20, height=20, palette="measured")
+        assert all(pixel == 0 for row in result for pixel in row)
+
+    def test_measured_white(self):
+        img = Image.new("RGB", (20, 20), (255, 255, 255))
+        result = convert_image(img, width=20, height=20, palette="measured")
+        assert all(pixel == 1 for row in result for pixel in row)
+
+    def test_measured_values_in_range(self):
+        img = Image.new("RGB", (20, 20), (128, 64, 32))
+        result = convert_image(img, width=20, height=20, palette="measured")
+        assert all(0 <= pixel <= 3 for row in result for pixel in row)
+
+    def test_measured_with_cielab_dither(self):
+        img = Image.new("RGB", (20, 20), (100, 80, 40))
+        result = convert_image(
+            img, width=20, height=20, dither="atkinson", palette="measured",
+        )
+        assert all(0 <= pixel <= 3 for row in result for pixel in row)
+
+    def test_invalid_palette_mode(self):
+        img = Image.new("RGB", (20, 20), (0, 0, 0))
+        with pytest.raises(ValueError, match="Unknown palette mode"):
+            convert_image(img, width=20, height=20, palette="invalid")

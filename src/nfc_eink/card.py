@@ -169,7 +169,11 @@ class EInkCard:
             raise AuthenticationError(f"Authentication failed: {e}") from e
 
     def send_image(
-        self, image: Any, dither: str = "pillow", resize: str = "fit",
+        self,
+        image: Any,
+        dither: str = "pillow",
+        resize: str = "fit",
+        palette: str = "pure",
     ) -> None:
         """Send an image to the card.
 
@@ -184,6 +188,9 @@ class EInkCard:
                 'jarvis', 'stucki', 'none'.
             resize: Resize mode for PIL Image conversion.
                 'fit' (default) adds white margins, 'cover' crops excess.
+            palette: Palette mode for PIL Image conversion.
+                'pure' (default) uses ideal RGB values.
+                'measured' uses colors from an actual e-ink panel.
 
         Raises:
             CommunicationError: If sending fails.
@@ -204,10 +211,12 @@ class EInkCard:
             if di is not None:
                 pixels = convert_image(
                     image, di.width, di.height, di.num_colors,
-                    dither=dither, resize=resize,
+                    dither=dither, resize=resize, palette=palette,
                 )
             else:
-                pixels = convert_image(image, dither=dither, resize=resize)
+                pixels = convert_image(
+                    image, dither=dither, resize=resize, palette=palette,
+                )
         else:
             pixels = image
 

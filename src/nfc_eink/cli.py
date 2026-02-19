@@ -42,7 +42,13 @@ def _build_cli(click: object) -> object:
         default="fit",
         help="Resize mode: fit (white margins) or cover (crop excess). Default: fit.",
     )
-    def send(image_path: str, dither: str, resize: str) -> None:
+    @_click.option(
+        "--palette", "-p",
+        type=_click.Choice(["pure", "measured"], case_sensitive=False),
+        default="pure",
+        help="Palette mode: pure (ideal RGB) or measured (actual panel colors). Default: pure.",
+    )
+    def send(image_path: str, dither: str, resize: str, palette: str) -> None:
         """Send an image to the e-ink card and refresh the display."""
         from PIL import Image
 
@@ -59,8 +65,8 @@ def _build_cli(click: object) -> object:
                 f"({di.width}x{di.height}, {di.num_colors} colors)"
             )
 
-            _click.echo(f"Sending image (dither={dither}, resize={resize})...")
-            card.send_image(image, dither=dither, resize=resize)
+            _click.echo(f"Sending image (dither={dither}, resize={resize}, palette={palette})...")
+            card.send_image(image, dither=dither, resize=resize, palette=palette)
 
             _click.echo("Refreshing display...")
             card.refresh()
