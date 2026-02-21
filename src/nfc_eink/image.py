@@ -147,6 +147,8 @@ def encode_image(
         block_sizes = device_info.block_sizes
         if device_info.rotated:
             pixels = rotate_cw90(pixels)
+        if device_info.hflip:
+            pixels = [row[::-1] for row in pixels]
     else:
         bpp = 2
         block_sizes = [2000] * 15  # 400x300 4-color default

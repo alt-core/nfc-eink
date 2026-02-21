@@ -13,6 +13,7 @@ _ROTATED_PANELS: set[tuple[int, int]] = {
 }
 
 
+
 @dataclass
 class DeviceInfo:
     """Parsed device information from 00D1 response.
@@ -37,6 +38,7 @@ class DeviceInfo:
     serial_number: str
     c1: bytes = b""
     raw: bytes = b""
+    hflip: bool = False
 
     @property
     def num_colors(self) -> int:
@@ -130,8 +132,9 @@ def parse_tlv(data: bytes) -> dict[int, bytes]:
 # a0[1] is NOT bpp directly; it's a color mode code.
 # The "height" field in A0 stores physical_height * bpp.
 _COLOR_MODE_TO_BPP: dict[int, int] = {
-    0x01: 1,  # 2-color (black/white)
-    0x07: 2,  # 4-color (black/white/yellow/red)
+    0x01: 1,  # 2-color (black/white) — 296x128
+    0x07: 2,  # 4-color (black/white/yellow/red) — 400x300
+    0x47: 1,  # 2-color (black/white) — 400x300
 }
 
 
@@ -177,6 +180,12 @@ def parse_device_info(data: bytes) -> DeviceInfo:
     bits_per_pixel = _COLOR_MODE_TO_BPP[color_mode]
     height = height_raw // bits_per_pixel
 
+    # Some panels report portrait dimensions (width < height) for a
+    # physically landscape display. Swap to present as landscape.
+    swapped = width < height
+    if swapped:
+        width, height = height, width
+
     serial_number = ""
     if 0xC0 in tlv:
         serial_number = tlv[0xC0].decode("ascii", errors="replace")
@@ -184,6 +193,11 @@ def parse_device_info(data: bytes) -> DeviceInfo:
     c1 = b""
     if 0xC1 in tlv:
         c1 = tlv[0xC1]
+
+    # For swapped panels: if _ROTATED_PANELS handles the axis transform
+    # via CW90 rotation, hflip is not needed. Otherwise hflip compensates.
+    rotated = (width, height) in _ROTATED_PANELS
+    hflip = swapped and not rotated
 
     return DeviceInfo(
         width=width,
@@ -193,4 +207,5 @@ def parse_device_info(data: bytes) -> DeviceInfo:
         serial_number=serial_number,
         c1=c1,
         raw=data,
+        hflip=hflip,
     )
