@@ -22,6 +22,20 @@ RESPONSE_400x300_4COLOR = bytes.fromhex(
     "d10701200000000000"
 )
 
+# Synthetic response for 296x128 4-color device (color_mode=0x07, portrait A0)
+# A0: [f0 07 20 02 50 00 80] → width_raw=128, height_raw=592 → swap to 296x128
+RESPONSE_296x128_4COLOR = bytes.fromhex(
+    "a007f0072002500080"
+    "c00a54455354303030303031"
+)
+
+# Synthetic response for 400x300 2-color device (color_mode=0x47, portrait A0)
+# A0: [f0 47 20 01 90 01 2c] → width_raw=300, height_raw=400 → swap to 400x300
+RESPONSE_400x300_2COLOR = bytes.fromhex(
+    "a007f047200190012c"
+    "c00a54455354303030303032"
+)
+
 # Backward compat alias
 SAMPLE_RESPONSE = RESPONSE_296x128_2COLOR
 
@@ -181,3 +195,85 @@ class TestDeviceInfoProperties:
         assert info.fb_total_bytes == 4736
         assert info.block_sizes == [2000, 2000, 736]
         assert info.num_blocks == 3
+
+    def test_hflip_device(self):
+        """Verify hflip for a swapped non-rotated device (400x300 2-color)."""
+        info = DeviceInfo(
+            width=400, height=300, bits_per_pixel=1,
+            rows_per_block=32, serial_number="TEST003",
+            hflip=True,
+        )
+        assert info.rotated is False
+        assert info.hflip is True
+        assert info.fb_width == 400
+        assert info.fb_height == 300
+
+
+class TestParseDeviceInfo296x128_4Color:
+    """Tests for 296x128 4-color device (color_mode=0x07, portrait A0).
+
+    A0 reports width=128, height_raw=592 (296*2). Swapped to 296x128 landscape.
+    Uses CW90 rotation (in _ROTATED_PANELS), no hflip.
+    """
+
+    def test_dimensions(self):
+        info = parse_device_info(RESPONSE_296x128_4COLOR)
+        assert info.width == 296
+        assert info.height == 128
+
+    def test_color_depth(self):
+        info = parse_device_info(RESPONSE_296x128_4COLOR)
+        assert info.bits_per_pixel == 2
+        assert info.num_colors == 4
+
+    def test_rotation(self):
+        info = parse_device_info(RESPONSE_296x128_4COLOR)
+        assert info.rotated is True
+        assert info.hflip is False
+
+    def test_framebuffer(self):
+        info = parse_device_info(RESPONSE_296x128_4COLOR)
+        assert info.fb_width == 128
+        assert info.fb_height == 296
+        # 128/4 * 296 = 9472
+        assert info.fb_total_bytes == 9472
+
+    def test_block_structure(self):
+        info = parse_device_info(RESPONSE_296x128_4COLOR)
+        assert info.num_blocks == 5
+        assert info.block_sizes == [2000, 2000, 2000, 2000, 1472]
+
+
+class TestParseDeviceInfo400x300_2Color:
+    """Tests for 400x300 2-color device (color_mode=0x47, portrait A0).
+
+    A0 reports width=300, height_raw=400. Swapped to 400x300 landscape.
+    Not in _ROTATED_PANELS, so hflip=True.
+    """
+
+    def test_dimensions(self):
+        info = parse_device_info(RESPONSE_400x300_2COLOR)
+        assert info.width == 400
+        assert info.height == 300
+
+    def test_color_depth(self):
+        info = parse_device_info(RESPONSE_400x300_2COLOR)
+        assert info.bits_per_pixel == 1
+        assert info.num_colors == 2
+
+    def test_hflip(self):
+        info = parse_device_info(RESPONSE_400x300_2COLOR)
+        assert info.rotated is False
+        assert info.hflip is True
+
+    def test_framebuffer(self):
+        info = parse_device_info(RESPONSE_400x300_2COLOR)
+        assert info.fb_width == 400
+        assert info.fb_height == 300
+        # 400/8 * 300 = 15000
+        assert info.fb_total_bytes == 15000
+
+    def test_block_structure(self):
+        info = parse_device_info(RESPONSE_400x300_2COLOR)
+        assert info.num_blocks == 8
+        assert info.block_sizes == [2000] * 7 + [1000]

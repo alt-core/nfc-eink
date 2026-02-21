@@ -133,7 +133,7 @@ def parse_tlv(data: bytes) -> dict[int, bytes]:
 # The "height" field in A0 stores physical_height * bpp.
 _COLOR_MODE_TO_BPP: dict[int, int] = {
     0x01: 1,  # 2-color (black/white) — 296x128
-    0x07: 2,  # 4-color (black/white/yellow/red) — 400x300
+    0x07: 2,  # 4-color (black/white/yellow/red) — 400x300, 296x128
     0x47: 1,  # 2-color (black/white) — 400x300
 }
 
